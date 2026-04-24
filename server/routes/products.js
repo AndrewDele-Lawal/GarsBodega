@@ -16,9 +16,8 @@ router.get('/', async (req, res) => {
         p.product_size,
         p.short_description,
         p.current_price,
-        COALESCE(SUM(s.quantity_on_hand), 0) AS total_stock
+        p.total_stock
       FROM Product p
-      LEFT JOIN Stock s ON p.product_id = s.product_id
     `;
 
     const conditions = [];
@@ -26,10 +25,12 @@ router.get('/', async (req, res) => {
 
     if (search) {
       values.push(`%${search}%`);
-      conditions.push(`(
-        p.product_name ILIKE $${values.length}
-        OR p.short_description ILIKE $${values.length}
-      )`);
+      conditions.push(`
+        (
+          p.product_name ILIKE $${values.length}
+          OR p.short_description ILIKE $${values.length}
+        )
+      `);
     }
 
     if (category) {
@@ -47,30 +48,17 @@ router.get('/', async (req, res) => {
       conditions.push(`p.brand ILIKE $${values.length}`);
     }
 
-    if (conditions.length > 0) {
-      query += ` WHERE ` + conditions.join(' AND ');
+    if (in_stock === 'true') {
+      conditions.push(`p.total_stock > 0`);
     }
 
-    query += `
-      GROUP BY
-        p.product_id,
-        p.product_name,
-        p.category,
-        p.product_type,
-        p.brand,
-        p.product_size,
-        p.short_description,
-        p.current_price
-    `;
-
-    if (in_stock === 'true') {
-      query += ` HAVING COALESCE(SUM(s.quantity_on_hand), 0) > 0 `;
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(' AND ');
     }
 
     query += ` ORDER BY p.product_name ASC`;
 
     const result = await db.query(query, values);
-
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({
@@ -94,19 +82,9 @@ router.get('/:id', async (req, res) => {
         p.product_size,
         p.short_description,
         p.current_price,
-        COALESCE(SUM(s.quantity_on_hand), 0) AS total_stock
+        p.total_stock
       FROM Product p
-      LEFT JOIN Stock s ON p.product_id = s.product_id
       WHERE p.product_id = $1
-      GROUP BY
-        p.product_id,
-        p.product_name,
-        p.category,
-        p.product_type,
-        p.brand,
-        p.product_size,
-        p.short_description,
-        p.current_price
     `;
 
     const result = await db.query(query, [id]);
