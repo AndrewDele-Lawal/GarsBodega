@@ -6,6 +6,7 @@ export default function Account({ customerId }) {
   const [cards, setCards] = useState([]);
   const [feedback, setFeedback] = useState(null);
   const [topUp, setTopUp] = useState('');
+  const [topUpCardId, setTopUpCardId] = useState('');
 
   // Address form
   const [addrForm, setAddrForm] = useState({ street: '', city: '', state: '', zip_code: '', country: '', address_type: 'both' });
@@ -24,18 +25,25 @@ export default function Account({ customerId }) {
     setAddresses(await aRes.json());
     const ccData = await ccRes.json();
     setCards(ccData);
-    if (ccData.length > 0) setCardForm((f) => ({ ...f, address_id: ccData[0].address_id || '' }));
+    if (ccData.length > 0) {
+      setCardForm((f) => ({ ...f, address_id: ccData[0].address_id || '' }));
+      setTopUpCardId(ccData[0].card_id);
+    }
   };
 
   useEffect(() => { fetchAll(); }, []);
 
   const handleTopUp = async (e) => {
     e.preventDefault();
+    if (!topUpCardId) {
+      flash('error', 'Please add a credit card before reloading your balance.');
+      return;
+    }
     try {
       const res = await fetch(`/api/customers/${customerId}/balance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: topUp })
+        body: JSON.stringify({ amount: topUp, card_id: topUpCardId })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -114,10 +122,37 @@ export default function Account({ customerId }) {
         <p style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--color-primary)', margin: 'var(--space-1) 0 var(--space-4)' }}>
           ${Number(customer.account_balance).toFixed(2)}
         </p>
-        <form onSubmit={handleTopUp} style={{ display: 'flex', gap: 'var(--space-3)' }}>
-          <input type="number" min="1" step="0.01" placeholder="Amount to add" value={topUp} onChange={(e) => setTopUp(e.target.value)} style={{ width: 180 }} />
-          <button type="submit" className="btn btn-primary">Add Funds</button>
-        </form>
+        {cards.length === 0 ? (
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-warning)' }}>
+            Add a credit card below before reloading your balance.
+          </p>
+        ) : (
+          <form onSubmit={handleTopUp} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', maxWidth: 400 }}>
+            <div className="form-group">
+              <label>Pay with</label>
+              <select value={topUpCardId} onChange={(e) => setTopUpCardId(e.target.value)}>
+                {cards.map((c) => (
+                  <option key={c.card_id} value={c.card_id}>
+                    {c.card_type} ···· {c.card_last_four} — {c.cardholder_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+              <input
+                type="number"
+                min="1"
+                step="0.01"
+                placeholder="Amount to add"
+                value={topUp}
+                onChange={(e) => setTopUp(e.target.value)}
+                style={{ width: 180 }}
+                required
+              />
+              <button type="submit" className="btn btn-primary">Add Funds</button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Addresses */}
