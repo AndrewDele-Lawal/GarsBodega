@@ -1,24 +1,58 @@
 import { useState, useEffect } from 'react';
 
+const emptyForm = {
+  first_name: '', last_name: '', email: '', phone_number: '', account_balance: '0.00'
+};
+
 export default function StaffCustomers() {
   const [customers, setCustomers] = useState([]);
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const res = await fetch('/api/staff/customers/all');
-      setCustomers(await res.json());
-      setLoading(false);
-    })();
-  }, []);
+  const flash = (type, msg) => { setFeedback({ type, msg }); setTimeout(() => setFeedback(null), 4000); };
+
+  const fetchCustomers = async () => {
+    const res = await fetch('/api/staff/customers/all');
+    setCustomers(await res.json());
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchCustomers(); }, []);
 
   const viewCustomer = async (customerId) => {
     setSelected(customerId);
     const res = await fetch(`/api/staff/customers/${customerId}`);
     setDetail(await res.json());
   };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      const res = await fetch('/api/staff/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create customer');
+      flash('success', `Customer "${data.first_name} ${data.last_name}" created (ID #${data.customer_id})!`);
+      setForm(emptyForm);
+      fetchCustomers();
+    } catch (err) {
+      flash('error', err.message);
+    }
+    setCreating(false);
+  };
+
+  const f = (key) => ({
+    value: form[key],
+    onChange: (e) => setForm({ ...form, [key]: e.target.value })
+  });
 
   const statusBadge = (status) => {
     const map = { pending: 'badge-yellow', 'in transit': 'badge-blue', completed: 'badge-green', cancelled: 'badge-red' };
@@ -40,7 +74,10 @@ export default function StaffCustomers() {
       </div>
 
       {detail.orders.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>No orders for this customer.</p>
+        <div className="empty-state">
+          <h3>No orders yet</h3>
+          <p>This customer hasn't placed any orders.</p>
+        </div>
       ) : (
         <div className="table-wrap card">
           <table>
@@ -68,26 +105,75 @@ export default function StaffCustomers() {
     <div>
       <div className="page-header">
         <h2>Customers</h2>
-        <p>View all customers and their order history</p>
+        <p>Add new customers or view existing order history</p>
       </div>
 
-      <div className="table-wrap card">
-        <table>
-          <thead>
-            <tr><th>ID</th><th>Name</th><th>Balance</th><th></th></tr>
-          </thead>
-          <tbody>
-            {customers.map((c) => (
-              <tr key={c.customer_id}>
-                <td>#{c.customer_id}</td>
-                <td style={{ fontWeight: 600 }}>{c.first_name} {c.last_name}</td>
-                <td>${Number(c.account_balance).toFixed(2)}</td>
-                <td><button className="btn btn-ghost btn-sm" onClick={() => viewCustomer(c.customer_id)}>View Orders</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {feedback && <div className={`feedback feedback-${feedback.type}`}>{feedback.msg}</div>}
+
+      {/* Add Customer Form */}
+      <div className="card" style={{ marginBottom: 'var(--space-8)' }}>
+        <p style={{ fontWeight: 700, marginBottom: 'var(--space-4)' }}>Add New Customer</p>
+        <form onSubmit={handleCreate}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <div className="form-row">
+              <div className="form-group">
+                <label>First Name *</label>
+                <input placeholder="e.g. Clark" {...f('first_name')} required />
+              </div>
+              <div className="form-group">
+                <label>Last Name *</label>
+                <input placeholder="e.g. Kent" {...f('last_name')} required />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Email *</label>
+                <input type="email" placeholder="email@example.com" {...f('email')} required />
+              </div>
+              <div className="form-group">
+                <label>Phone Number</label>
+                <input placeholder="e.g. 555-123-4567" {...f('phone_number')} />
+              </div>
+            </div>
+            <div className="form-group" style={{ maxWidth: 200 }}>
+              <label>Starting Balance ($)</label>
+              <input type="number" min="0" step="0.01" {...f('account_balance')} />
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="btn btn-primary" disabled={creating}>
+                {creating ? 'Creating...' : 'Add Customer'}
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
+
+      {/* Customer Table */}
+      {customers.length === 0 ? (
+        <div className="empty-state">
+          <h3>No customers yet</h3>
+          <p>Use the form above to add the first customer.</p>
+        </div>
+      ) : (
+        <div className="table-wrap card">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Name</th><th>Email</th><th>Balance</th><th></th></tr>
+            </thead>
+            <tbody>
+              {customers.map((c) => (
+                <tr key={c.customer_id}>
+                  <td>#{c.customer_id}</td>
+                  <td style={{ fontWeight: 600 }}>{c.first_name} {c.last_name}</td>
+                  <td style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)' }}>{c.email}</td>
+                  <td>${Number(c.account_balance).toFixed(2)}</td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => viewCustomer(c.customer_id)}>View Orders</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
