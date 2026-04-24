@@ -56,7 +56,7 @@ router.get('/:staffId', async (req, res) => {
 
 // ─── STAFF: CUSTOMER QUERIES ──────────────────────────────────────────────────
 
-// GET /api/staff/customers — staff view of all customers
+// GET /api/staff/customers/all — staff view of all customers
 router.get('/customers/all', async (req, res) => {
   try {
     const result = await db.query(
@@ -74,6 +74,33 @@ router.get('/customers/all', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch customers', details: error.message });
+  }
+});
+
+// POST /api/staff/customers — create a new customer
+router.post('/customers', async (req, res) => {
+  try {
+    const { first_name, last_name, middle_name, account_balance = 0 } = req.body;
+
+    if (!first_name || !last_name) {
+      return res.status(400).json({ error: 'first_name and last_name are required' });
+    }
+
+    const result = await db.query(
+      `
+      INSERT INTO Customer (first_name, middle_name, last_name, account_balance)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+      `,
+      [first_name, middle_name || null, last_name, account_balance]
+    );
+
+    res.status(201).json({
+      message: 'Customer created successfully',
+      customer: result.rows[0]
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create customer', details: error.message });
   }
 });
 
@@ -244,7 +271,7 @@ router.delete('/products/:productId', async (req, res) => {
 
 // ─── STAFF: WAREHOUSE & STOCK ─────────────────────────────────────────────────
 
-// GET /api/staff/warehouses — list all warehouses
+// GET /api/staff/warehouses/all — list all warehouses
 router.get('/warehouses/all', async (req, res) => {
   try {
     const result = await db.query(
@@ -273,7 +300,6 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
     try {
       await client.query('BEGIN');
 
-      // Verify warehouse exists
       const warehouseCheck = await client.query(
         'SELECT warehouse_id FROM Warehouse WHERE warehouse_id = $1',
         [warehouseId]
@@ -284,7 +310,6 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
         return res.status(404).json({ error: 'Warehouse not found' });
       }
 
-      // Verify product exists
       const productCheck = await client.query(
         'SELECT product_id FROM Product WHERE product_id = $1',
         [product_id]
@@ -295,18 +320,18 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
         return res.status(404).json({ error: 'Product not found' });
       }
 
-      // Upsert into Stock table
+      // Upsert into Stock table — quantity_on_hand is the correct column name
       await client.query(
         `
-        INSERT INTO Stock (warehouse_id, product_id, quantity)
+        INSERT INTO Stock (warehouse_id, product_id, quantity_on_hand)
         VALUES ($1, $2, $3)
         ON CONFLICT (warehouse_id, product_id)
-        DO UPDATE SET quantity = Stock.quantity + EXCLUDED.quantity
+        DO UPDATE SET quantity_on_hand = Stock.quantity_on_hand + EXCLUDED.quantity_on_hand
         `,
         [warehouseId, product_id, quantity]
       );
 
-      // Also update the product's total_stock
+      // Keep Product.total_stock in sync
       await client.query(
         `
         UPDATE Product
