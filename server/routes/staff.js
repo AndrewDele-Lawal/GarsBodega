@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
         last_name,
         job_title,
         salary
-      FROM Staff
+      FROM StaffMember
       ORDER BY last_name ASC
       `
     );
@@ -38,7 +38,7 @@ router.get('/:staffId', async (req, res) => {
         last_name,
         job_title,
         salary
-      FROM Staff
+      FROM StaffMember
       WHERE staff_id = $1
       `,
       [staffId]

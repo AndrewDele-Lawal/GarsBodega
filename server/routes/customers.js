@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// GET /api/customers/:customerId — get customer profile
+// GET /api/customers/:customerId
 router.get('/:customerId', async (req, res) => {
   try {
     const { customerId } = req.params;
@@ -34,19 +34,10 @@ router.get('/:customerId', async (req, res) => {
   }
 });
 
-// GET /api/customers/:customerId/orders — get full order history
+// GET /api/customers/:customerId/orders
 router.get('/:customerId/orders', async (req, res) => {
   try {
     const { customerId } = req.params;
-
-    const customerCheck = await db.query(
-      'SELECT customer_id FROM Customer WHERE customer_id = $1',
-      [customerId]
-    );
-
-    if (customerCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Customer not found' });
-    }
 
     const result = await db.query(
       `
@@ -83,34 +74,24 @@ router.get('/:customerId/orders', async (req, res) => {
   }
 });
 
-// PATCH /api/customers/:customerId — update name fields
+// PATCH /api/customers/:customerId
 router.patch('/:customerId', async (req, res) => {
   try {
     const { customerId } = req.params;
     const { first_name, middle_name, last_name } = req.body;
 
-    if (!first_name && !last_name && middle_name === undefined) {
-      return res.status(400).json({
-        error: 'At least one field (first_name, middle_name, last_name) is required'
-      });
-    }
-
-    // Build update dynamically — only update fields that were sent
     const fields = [];
     const values = [];
     let idx = 1;
 
-    if (first_name !== undefined) {
-      fields.push(`first_name = $${idx++}`);
-      values.push(first_name);
-    }
-    if (middle_name !== undefined) {
-      fields.push(`middle_name = $${idx++}`);
-      values.push(middle_name);
-    }
-    if (last_name !== undefined) {
-      fields.push(`last_name = $${idx++}`);
-      values.push(last_name);
+    if (first_name !== undefined)  { fields.push(`first_name = $${idx++}`); values.push(first_name); }
+    if (middle_name !== undefined) { fields.push(`middle_name = $${idx++}`); values.push(middle_name); }
+    if (last_name !== undefined)   { fields.push(`last_name = $${idx++}`); values.push(last_name); }
+
+    if (fields.length === 0) {
+      return res.status(400).json({
+        error: 'At least one field is required'
+      });
     }
 
     values.push(customerId);
@@ -141,15 +122,36 @@ router.patch('/:customerId', async (req, res) => {
   }
 });
 
-// POST /api/customers/:customerId/balance — add funds to account balance
+// POST /api/customers/:customerId/balance
 router.post('/:customerId/balance', async (req, res) => {
   try {
     const { customerId } = req.params;
-    const { amount } = req.body;
+    const { amount, card_id } = req.body;
 
     if (!amount || isNaN(amount) || Number(amount) <= 0) {
       return res.status(400).json({
         error: 'A valid positive amount is required'
+      });
+    }
+
+    if (!card_id) {
+      return res.status(400).json({
+        error: 'card_id is required to reload account balance'
+      });
+    }
+
+    const cardCheck = await db.query(
+      `
+      SELECT card_id
+      FROM CreditCard
+      WHERE card_id = $1 AND customer_id = $2
+      `,
+      [card_id, customerId]
+    );
+
+    if (cardCheck.rows.length === 0) {
+      return res.status(400).json({
+        error: 'The selected card does not belong to this customer'
       });
     }
 
@@ -163,13 +165,10 @@ router.post('/:customerId/balance', async (req, res) => {
       [amount, customerId]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Customer not found' });
-    }
-
     res.json({
-      message: `$${Number(amount).toFixed(2)} added to account`,
-      customer: result.rows[0]
+      message: `$${Number(amount).toFixed(2)} added to account balance`,
+      customer: result.rows[0],
+      reloaded_with_card_id: Number(card_id)
     });
   } catch (error) {
     res.status(500).json({

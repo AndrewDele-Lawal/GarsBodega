@@ -2,19 +2,25 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// ─── ADDRESSES ────────────────────────────────────────────────────────────────
-
-// GET /api/account/:customerId/addresses — get all addresses
+// GET /api/account/:customerId/addresses
 router.get('/:customerId/addresses', async (req, res) => {
   try {
     const { customerId } = req.params;
 
     const result = await db.query(
       `
-      SELECT *
-      FROM Address
-      WHERE customer_id = $1
-      ORDER BY address_id ASC
+      SELECT
+        a.address_id,
+        a.street,
+        a.city,
+        a.state_name,
+        a.zip_code,
+        a.country,
+        ca.address_type
+      FROM CustomerAddress ca
+      JOIN Address a ON ca.address_id = a.address_id
+      WHERE ca.customer_id = $1
+      ORDER BY a.address_id ASC
       `,
       [customerId]
     );
@@ -25,79 +31,130 @@ router.get('/:customerId/addresses', async (req, res) => {
   }
 });
 
-// POST /api/account/:customerId/addresses — add a new address
+// POST /api/account/:customerId/addresses
 router.post('/:customerId/addresses', async (req, res) => {
+  const client = await db.pool.connect();
+
   try {
     const { customerId } = req.params;
-    const { street, city, state, zip_code, country, address_type } = req.body;
+    const { street, city, state_name, zip_code, country, address_type = 'both' } = req.body;
 
-    if (!street || !city || !state || !zip_code || !country) {
+    if (!street || !city || !state_name || !zip_code || !country) {
       return res.status(400).json({
-        error: 'street, city, state, zip_code, and country are required'
+        error: 'street, city, state_name, zip_code, and country are required'
       });
     }
 
     const validTypes = ['delivery', 'payment', 'both'];
-    if (address_type && !validTypes.includes(address_type)) {
+    if (!validTypes.includes(address_type)) {
       return res.status(400).json({
         error: `address_type must be one of: ${validTypes.join(', ')}`
       });
     }
 
-    const result = await db.query(
+    await client.query('BEGIN');
+
+    const addressResult = await client.query(
       `
-      INSERT INTO Address (customer_id, street, city, state, zip_code, country, address_type)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO Address (street, city, state_name, zip_code, country)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *
       `,
-      [customerId, street, city, state, zip_code, country, address_type || 'both']
+      [street, city, state_name, zip_code, country]
     );
+
+    const address = addressResult.rows[0];
+
+    await client.query(
+      `
+      INSERT INTO CustomerAddress (customer_id, address_id, address_type)
+      VALUES ($1, $2, $3)
+      `,
+      [customerId, address.address_id, address_type]
+    );
+
+    await client.query('COMMIT');
 
     res.status(201).json({
       message: 'Address added successfully',
-      address: result.rows[0]
+      address: { ...address, address_type }
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: 'Failed to add address', details: error.message });
+  } finally {
+    client.release();
   }
 });
 
-// PATCH /api/account/:customerId/addresses/:addressId — update an address
+// PATCH /api/account/:customerId/addresses/:addressId
 router.patch('/:customerId/addresses/:addressId', async (req, res) => {
   try {
     const { customerId, addressId } = req.params;
-    const { street, city, state, zip_code, country, address_type } = req.body;
+    const { street, city, state_name, zip_code, country, address_type } = req.body;
 
-    const fields = [];
-    const values = [];
-    let idx = 1;
+    const linkCheck = await db.query(
+      `
+      SELECT 1
+      FROM CustomerAddress
+      WHERE customer_id = $1 AND address_id = $2
+      `,
+      [customerId, addressId]
+    );
 
-    if (street !== undefined)       { fields.push(`street = $${idx++}`);       values.push(street); }
-    if (city !== undefined)         { fields.push(`city = $${idx++}`);         values.push(city); }
-    if (state !== undefined)        { fields.push(`state = $${idx++}`);        values.push(state); }
-    if (zip_code !== undefined)     { fields.push(`zip_code = $${idx++}`);     values.push(zip_code); }
-    if (country !== undefined)      { fields.push(`country = $${idx++}`);      values.push(country); }
-    if (address_type !== undefined) { fields.push(`address_type = $${idx++}`); values.push(address_type); }
-
-    if (fields.length === 0) {
-      return res.status(400).json({ error: 'No fields provided to update' });
+    if (linkCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Address not found' });
     }
 
-    values.push(addressId, customerId);
+    const addressFields = [];
+    const addressValues = [];
+    let idx = 1;
+
+    if (street !== undefined)     { addressFields.push(`street = $${idx++}`); addressValues.push(street); }
+    if (city !== undefined)       { addressFields.push(`city = $${idx++}`); addressValues.push(city); }
+    if (state_name !== undefined) { addressFields.push(`state_name = $${idx++}`); addressValues.push(state_name); }
+    if (zip_code !== undefined)   { addressFields.push(`zip_code = $${idx++}`); addressValues.push(zip_code); }
+    if (country !== undefined)    { addressFields.push(`country = $${idx++}`); addressValues.push(country); }
+
+    if (addressFields.length > 0) {
+      addressValues.push(addressId);
+      await db.query(
+        `
+        UPDATE Address
+        SET ${addressFields.join(', ')}
+        WHERE address_id = $${idx}
+        `,
+        addressValues
+      );
+    }
+
+    if (address_type !== undefined) {
+      await db.query(
+        `
+        UPDATE CustomerAddress
+        SET address_type = $1
+        WHERE customer_id = $2 AND address_id = $3
+        `,
+        [address_type, customerId, addressId]
+      );
+    }
 
     const result = await db.query(
       `
-      UPDATE Address
-      SET ${fields.join(', ')}
-      WHERE address_id = $${idx} AND customer_id = $${idx + 1}
-      RETURNING *
+      SELECT
+        a.address_id,
+        a.street,
+        a.city,
+        a.state_name,
+        a.zip_code,
+        a.country,
+        ca.address_type
+      FROM CustomerAddress ca
+      JOIN Address a ON ca.address_id = a.address_id
+      WHERE ca.customer_id = $1 AND ca.address_id = $2
       `,
-      values
+      [customerId, addressId]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Address not found' });
-    }
 
     res.json({
       message: 'Address updated successfully',
@@ -108,41 +165,57 @@ router.patch('/:customerId/addresses/:addressId', async (req, res) => {
   }
 });
 
-// DELETE /api/account/:customerId/addresses/:addressId — delete an address
+// DELETE /api/account/:customerId/addresses/:addressId
 router.delete('/:customerId/addresses/:addressId', async (req, res) => {
+  const client = await db.pool.connect();
+
   try {
     const { customerId, addressId } = req.params;
 
-    // Block delete if a credit card still references this address
-    const cardCheck = await db.query(
+    const cardCheck = await client.query(
       'SELECT card_id FROM CreditCard WHERE address_id = $1',
       [addressId]
     );
 
     if (cardCheck.rows.length > 0) {
       return res.status(400).json({
-        error: 'Cannot delete address — it is still linked to a credit card. Remove the card first or update it to use a different address.'
+        error: 'Cannot delete address — it is still linked to a credit card.'
       });
     }
 
-    const result = await db.query(
-      'DELETE FROM Address WHERE address_id = $1 AND customer_id = $2 RETURNING *',
-      [addressId, customerId]
+    await client.query('BEGIN');
+
+    const linkDelete = await client.query(
+      `
+      DELETE FROM CustomerAddress
+      WHERE customer_id = $1 AND address_id = $2
+      RETURNING *
+      `,
+      [customerId, addressId]
     );
 
-    if (result.rows.length === 0) {
+    if (linkDelete.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Address not found' });
     }
 
+    await client.query(
+      'DELETE FROM Address WHERE address_id = $1',
+      [addressId]
+    );
+
+    await client.query('COMMIT');
+
     res.json({ message: 'Address deleted successfully' });
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: 'Failed to delete address', details: error.message });
+  } finally {
+    client.release();
   }
 });
 
-// ─── CREDIT CARDS ─────────────────────────────────────────────────────────────
-
-// GET /api/account/:customerId/cards — get all credit cards
+// GET /api/account/:customerId/cards
 router.get('/:customerId/cards', async (req, res) => {
   try {
     const { customerId } = req.params;
@@ -159,7 +232,7 @@ router.get('/:customerId/cards', async (req, res) => {
         cc.address_id,
         a.street,
         a.city,
-        a.state,
+        a.state_name,
         a.zip_code,
         a.country
       FROM CreditCard cc
@@ -176,7 +249,7 @@ router.get('/:customerId/cards', async (req, res) => {
   }
 });
 
-// POST /api/account/:customerId/cards — add a new credit card
+// POST /api/account/:customerId/cards
 router.post('/:customerId/cards', async (req, res) => {
   try {
     const { customerId } = req.params;
@@ -194,19 +267,18 @@ router.post('/:customerId/cards', async (req, res) => {
       });
     }
 
-    if (!/^\d{4}$/.test(card_last_four)) {
-      return res.status(400).json({ error: 'card_last_four must be exactly 4 digits' });
-    }
-
-    // Verify the address belongs to this customer
     const addressCheck = await db.query(
-      'SELECT address_id FROM Address WHERE address_id = $1 AND customer_id = $2',
-      [address_id, customerId]
+      `
+      SELECT 1
+      FROM CustomerAddress
+      WHERE customer_id = $1 AND address_id = $2
+      `,
+      [customerId, address_id]
     );
 
     if (addressCheck.rows.length === 0) {
       return res.status(400).json({
-        error: 'address_id does not belong to this customer. Add the address first.'
+        error: 'address_id does not belong to this customer'
       });
     }
 
@@ -228,7 +300,7 @@ router.post('/:customerId/cards', async (req, res) => {
   }
 });
 
-// PATCH /api/account/:customerId/cards/:cardId — update a credit card
+// PATCH /api/account/:customerId/cards/:cardId
 router.patch('/:customerId/cards/:cardId', async (req, res) => {
   try {
     const { customerId, cardId } = req.params;
@@ -238,18 +310,24 @@ router.patch('/:customerId/cards/:cardId', async (req, res) => {
     const values = [];
     let idx = 1;
 
-    if (card_type !== undefined)       { fields.push(`card_type = $${idx++}`);       values.push(card_type); }
-    if (expiration_date !== undefined)  { fields.push(`expiration_date = $${idx++}`);  values.push(expiration_date); }
-    if (cardholder_name !== undefined)  { fields.push(`cardholder_name = $${idx++}`);  values.push(cardholder_name); }
+    if (card_type !== undefined)      { fields.push(`card_type = $${idx++}`); values.push(card_type); }
+    if (expiration_date !== undefined){ fields.push(`expiration_date = $${idx++}`); values.push(expiration_date); }
+    if (cardholder_name !== undefined){ fields.push(`cardholder_name = $${idx++}`); values.push(cardholder_name); }
+
     if (address_id !== undefined) {
-      // Verify new address belongs to this customer
       const addressCheck = await db.query(
-        'SELECT address_id FROM Address WHERE address_id = $1 AND customer_id = $2',
-        [address_id, customerId]
+        `
+        SELECT 1
+        FROM CustomerAddress
+        WHERE customer_id = $1 AND address_id = $2
+        `,
+        [customerId, address_id]
       );
+
       if (addressCheck.rows.length === 0) {
         return res.status(400).json({ error: 'address_id does not belong to this customer' });
       }
+
       fields.push(`address_id = $${idx++}`);
       values.push(address_id);
     }
@@ -283,7 +361,7 @@ router.patch('/:customerId/cards/:cardId', async (req, res) => {
   }
 });
 
-// DELETE /api/account/:customerId/cards/:cardId — delete a credit card
+// DELETE /api/account/:customerId/cards/:cardId
 router.delete('/:customerId/cards/:cardId', async (req, res) => {
   try {
     const { customerId, cardId } = req.params;
