@@ -141,7 +141,7 @@ body {
 
 /* ── PAGE HEADER ── */
 .page-header { margin-bottom: var(--space-6); }
-.page-header h2 { font-size: var(--text-xl); font-weight: 700; }
+.page-header h2 { font-size: var(--text-xl); font-weight: 700; color: var(--color-error-hover);}
 .page-header p { color: var(--color-text-muted); font-size: var(--text-sm); margin-top: var(--space-1); }
 
 /* ── CARDS ── */

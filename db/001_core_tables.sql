@@ -150,3 +150,33 @@ CREATE TABLE SupplierProduct (
     supplier_price NUMERIC(10, 2) NOT NULL CHECK (supplier_price >= 0),
     PRIMARY KEY (supplier_id, product_id)
 );
+
+CREATE OR REPLACE FUNCTION check_warehouse_capacity()
+RETURNS TRIGGER AS $$
+DECLARE
+  current_total INTEGER;
+  warehouse_capacity INTEGER;
+BEGIN
+  SELECT COALESCE(SUM(quantity_on_hand), 0)
+  INTO current_total
+  FROM Stock
+  WHERE warehouse_id = NEW.warehouse_id
+    AND product_id != NEW.product_id;
+
+  SELECT capacity_size INTO warehouse_capacity
+  FROM Warehouse
+  WHERE warehouse_id = NEW.warehouse_id;
+
+  IF (current_total + NEW.quantity_on_hand) > warehouse_capacity THEN
+    RAISE EXCEPTION 'Warehouse % capacity exceeded. Capacity: %, Current: %, Attempted: %',
+      NEW.warehouse_id, warehouse_capacity, current_total, NEW.quantity_on_hand;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER enforce_warehouse_capacity
+BEFORE INSERT OR UPDATE ON Stock
+FOR EACH ROW
+EXECUTE FUNCTION check_warehouse_capacity();

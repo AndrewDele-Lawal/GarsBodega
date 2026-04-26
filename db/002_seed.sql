@@ -11,7 +11,7 @@ VALUES
 -- CUSTOMER
 -- ---------------------------------
 INSERT INTO Customer (first_name, middle_name, last_name, account_balance)
-VALUES ('K', NULL, 'Hero', 100.00);
+VALUES ('Luffy', 'D', 'Monkey', 100.00);
 
 -- Link customer to address 2
 INSERT INTO CustomerAddress (customer_id, address_id, address_type)
@@ -33,7 +33,7 @@ VALUES (1, 5000);
 -- STAFF MEMBER
 -- ---------------------------------
 INSERT INTO StaffMember (first_name, middle_name, last_name, salary, job_title, address_id, warehouse_id)
-VALUES ('Gar', NULL, 'Manager', 55000.00, 'Store Manager', 3, 1);
+VALUES ('Mr.', NULL, 'Gar', 55000.00, 'Store Manager', 3, 1), ('Radicles', NULL, 'X', 20000.00, 'Retail Accociate', 3, 1), ('Enid', NULL, 'Mettle', 25000.00, 'Retail Accociate', 3, 1) , ('Kaio', 'KO', 'Kincaid', 15000.00, 'Retail Accociate', 3, 1);
 
 -- ---------------------------------
 -- PRODUCTS
