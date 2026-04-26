@@ -37,7 +37,9 @@
   --shadow-md: 0 4px 12px oklch(0.2 0.01 80 / 0.08);
   --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* Sidebar collapses to icon-only rail at narrow widths */
   --sidebar-width: 220px;
+  --sidebar-collapsed-width: 52px;
   --header-height: 56px;
 }
 
@@ -63,11 +65,15 @@ body {
   top: 0; left: 0; bottom: 0;
   z-index: 100;
   overflow-y: auto;
+  overflow-x: hidden;
+  transition: width var(--transition);
 }
 
 .sidebar-logo {
   padding: var(--space-6) var(--space-4) var(--space-4);
   border-bottom: 1px solid var(--color-divider);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .sidebar-logo h1 {
@@ -92,6 +98,8 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: var(--space-2) var(--space-2) var(--space-1);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .nav-btn {
@@ -110,6 +118,8 @@ body {
   text-align: left;
   transition: background var(--transition), color var(--transition);
   position: relative;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .nav-btn:hover { background: var(--color-divider); color: var(--color-text); }
@@ -118,6 +128,18 @@ body {
   background: oklch(from var(--color-primary) l c h / 0.1);
   color: var(--color-primary);
   font-weight: 700;
+}
+
+/* Icon inside nav-btn — always visible, never shrinks */
+.nav-btn svg, .nav-btn .nav-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+/* Label text inside nav-btn — hidden when collapsed */
+.nav-label {
+  transition: opacity var(--transition), width var(--transition);
 }
 
 .nav-badge {
@@ -130,6 +152,7 @@ body {
   border-radius: var(--radius-full);
   min-width: 18px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .main-content {
@@ -137,6 +160,54 @@ body {
   flex: 1;
   padding: var(--space-8);
   max-width: 1100px;
+  transition: margin-left var(--transition);
+  min-width: 0;
+}
+
+/* ── COLLAPSED SIDEBAR (narrow viewport — side-by-side demo mode) ── */
+/* Triggers at 900px so ~50% of a 1920 wide screen collapses the sidebar */
+@media (max-width: 900px) {
+  .sidebar {
+    width: var(--sidebar-collapsed-width);
+  }
+
+  .sidebar-logo h1,
+  .sidebar-logo p,
+  .sidebar-section-label,
+  .nav-label,
+  .nav-badge {
+    opacity: 0;
+    pointer-events: none;
+    width: 0;
+    overflow: hidden;
+  }
+
+  /* Center icons in the collapsed rail */
+  .nav-btn {
+    justify-content: center;
+    padding: var(--space-2);
+  }
+
+  .sidebar-logo {
+    padding: var(--space-4) var(--space-2);
+    display: flex;
+    justify-content: center;
+  }
+
+  .sidebar-section {
+    padding: var(--space-3) var(--space-1);
+  }
+
+  .main-content {
+    margin-left: var(--sidebar-collapsed-width);
+    padding: var(--space-4) var(--space-3);
+  }
+}
+
+/* ── EXTRA NARROW (mobile / very tight windows) ── */
+@media (max-width: 480px) {
+  .sidebar { transform: translateX(-100%); }
+  .main-content { margin-left: 0; padding: var(--space-4); }
 }
 
 /* ── PAGE HEADER ── */
@@ -156,7 +227,7 @@ body {
 /* ── PRODUCT GRID ── */
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
   gap: var(--space-4);
 }
 
@@ -235,15 +306,18 @@ input:focus, select:focus, textarea:focus {
 }
 
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
-.form-actions { display: flex; gap: var(--space-3); margin-top: var(--space-4); }
+@media (max-width: 900px) { .form-row { grid-template-columns: 1fr; } }
+
+.form-actions { display: flex; gap: var(--space-3); margin-top: var(--space-4); flex-wrap: wrap; }
 
 /* ── SEARCH BAR ── */
 .search-bar {
   display: flex;
   gap: var(--space-3);
   margin-bottom: var(--space-6);
+  flex-wrap: wrap;
 }
-.search-bar input { flex: 1; }
+.search-bar input { flex: 1; min-width: 120px; }
 
 /* ── TABLE ── */
 .table-wrap { overflow-x: auto; }
@@ -261,7 +335,7 @@ thead th {
 tbody tr { border-bottom: 1px solid var(--color-divider); transition: background var(--transition); }
 tbody tr:hover { background: var(--color-bg); }
 tbody td { padding: var(--space-3); vertical-align: middle; }
-.td-actions { display: flex; gap: var(--space-2); }
+.td-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 
 /* ── STATUS BADGE ── */
 .badge {
@@ -291,9 +365,10 @@ tbody td { padding: var(--space-3); vertical-align: middle; }
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  flex-wrap: wrap;
 }
 
-.cart-item-info { flex: 1; }
+.cart-item-info { flex: 1; min-width: 120px; }
 .cart-item-info h4 { font-weight: 700; }
 .cart-item-info p { font-size: var(--text-xs); color: var(--color-text-muted); }
 
@@ -309,6 +384,8 @@ tbody td { padding: var(--space-3); vertical-align: middle; }
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 
 .cart-total { font-size: var(--text-lg); font-weight: 700; }
@@ -332,7 +409,7 @@ tbody td { padding: var(--space-3); vertical-align: middle; }
 }
 
 .modal h3 { font-size: var(--text-lg); font-weight: 700; margin-bottom: var(--space-4); }
-.modal-actions { display: flex; gap: var(--space-3); margin-top: var(--space-6); justify-content: flex-end; }
+.modal-actions { display: flex; gap: var(--space-3); margin-top: var(--space-6); justify-content: flex-end; flex-wrap: wrap; }
 
 /* ── FEEDBACK ── */
 .feedback { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 600; margin-bottom: var(--space-4); }
@@ -361,11 +438,3 @@ tbody td { padding: var(--space-3); vertical-align: middle; }
 /* ── SECTION DIVIDER ── */
 .section-gap { margin-top: var(--space-10); }
 .section-title { font-size: var(--text-lg); font-weight: 700; margin-bottom: var(--space-4); }
-
-/* ── RESPONSIVE ── */
-@media (max-width: 768px) {
-  .sidebar { transform: translateX(-100%); }
-  .main-content { margin-left: 0; padding: var(--space-4); }
-  .form-row { grid-template-columns: 1fr; }
-  .product-grid { grid-template-columns: 1fr; }
-}

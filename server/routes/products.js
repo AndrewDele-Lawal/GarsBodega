@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN ProductImage pi ON p.product_id = pi.product_id
     `;
 
-    const conditions = [];
+    const conditions = [`p.category != 'Dev'`];
     const values = [];
 
     if (search) {
@@ -48,9 +48,7 @@ router.get('/', async (req, res) => {
       conditions.push(`p.brand ILIKE $${values.length}`);
     }
 
-    if (conditions.length > 0) {
-      query += ` WHERE ` + conditions.join(' AND ');
-    }
+    query += ` WHERE ` + conditions.join(' AND ');
 
     query += `
       GROUP BY
