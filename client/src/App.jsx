@@ -54,7 +54,7 @@ export default function App() {
   }
 
   const customerLinks = [
-    { key: 'products', label: 'Browse Products', icon: '🛘️' },
+    { key: 'products', label: 'Browse Products', icon: '🔍' },
     { key: 'cart',     label: 'Cart',            icon: '🛒', badge: cartCount },
     { key: 'orders',   label: 'My Orders',       icon: '📦' },
     { key: 'account',  label: 'My Account',      icon: '👤' },

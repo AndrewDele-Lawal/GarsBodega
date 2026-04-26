@@ -37,11 +37,21 @@ router.post('/:customerId/addresses', async (req, res) => {
 
   try {
     const { customerId } = req.params;
-    const { street, city, state_name, zip_code, country, address_type = 'both' } = req.body;
+    const {
+      street,
+      city,
+      state,
+      state_name,
+      zip_code,
+      country,
+      address_type = 'both'
+    } = req.body;
 
-    if (!street || !city || !state_name || !zip_code || !country) {
+    const normalizedState = state_name || state;
+
+    if (!street || !city || !normalizedState || !zip_code || !country) {
       return res.status(400).json({
-        error: 'street, city, state_name, zip_code, and country are required'
+        error: 'street, city, state/state_name, zip_code, and country are required'
       });
     }
 
@@ -60,7 +70,7 @@ router.post('/:customerId/addresses', async (req, res) => {
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
       `,
-      [street, city, state_name, zip_code, country]
+      [street, city, normalizedState, zip_code, country]
     );
 
     const address = addressResult.rows[0];
@@ -77,7 +87,10 @@ router.post('/:customerId/addresses', async (req, res) => {
 
     res.status(201).json({
       message: 'Address added successfully',
-      address: { ...address, address_type }
+      address: {
+        ...address,
+        address_type
+      }
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -91,7 +104,17 @@ router.post('/:customerId/addresses', async (req, res) => {
 router.patch('/:customerId/addresses/:addressId', async (req, res) => {
   try {
     const { customerId, addressId } = req.params;
-    const { street, city, state_name, zip_code, country, address_type } = req.body;
+    const {
+      street,
+      city,
+      state,
+      state_name,
+      zip_code,
+      country,
+      address_type
+    } = req.body;
+
+    const normalizedState = state_name || state;
 
     const linkCheck = await db.query(
       `
@@ -110,14 +133,30 @@ router.patch('/:customerId/addresses/:addressId', async (req, res) => {
     const addressValues = [];
     let idx = 1;
 
-    if (street !== undefined)     { addressFields.push(`street = $${idx++}`); addressValues.push(street); }
-    if (city !== undefined)       { addressFields.push(`city = $${idx++}`); addressValues.push(city); }
-    if (state_name !== undefined) { addressFields.push(`state_name = $${idx++}`); addressValues.push(state_name); }
-    if (zip_code !== undefined)   { addressFields.push(`zip_code = $${idx++}`); addressValues.push(zip_code); }
-    if (country !== undefined)    { addressFields.push(`country = $${idx++}`); addressValues.push(country); }
+    if (street !== undefined) {
+      addressFields.push(`street = $${idx++}`);
+      addressValues.push(street);
+    }
+    if (city !== undefined) {
+      addressFields.push(`city = $${idx++}`);
+      addressValues.push(city);
+    }
+    if (normalizedState !== undefined) {
+      addressFields.push(`state_name = $${idx++}`);
+      addressValues.push(normalizedState);
+    }
+    if (zip_code !== undefined) {
+      addressFields.push(`zip_code = $${idx++}`);
+      addressValues.push(zip_code);
+    }
+    if (country !== undefined) {
+      addressFields.push(`country = $${idx++}`);
+      addressValues.push(country);
+    }
 
     if (addressFields.length > 0) {
       addressValues.push(addressId);
+
       await db.query(
         `
         UPDATE Address
@@ -129,6 +168,13 @@ router.patch('/:customerId/addresses/:addressId', async (req, res) => {
     }
 
     if (address_type !== undefined) {
+      const validTypes = ['delivery', 'payment', 'both'];
+      if (!validTypes.includes(address_type)) {
+        return res.status(400).json({
+          error: `address_type must be one of: ${validTypes.join(', ')}`
+        });
+      }
+
       await db.query(
         `
         UPDATE CustomerAddress
@@ -172,17 +218,6 @@ router.delete('/:customerId/addresses/:addressId', async (req, res) => {
   try {
     const { customerId, addressId } = req.params;
 
-    const cardCheck = await client.query(
-      'SELECT card_id FROM CreditCard WHERE address_id = $1',
-      [addressId]
-    );
-
-    if (cardCheck.rows.length > 0) {
-      return res.status(400).json({
-        error: 'Cannot delete address — it is still linked to a credit card.'
-      });
-    }
-
     await client.query('BEGIN');
 
     const linkDelete = await client.query(
@@ -200,12 +235,29 @@ router.delete('/:customerId/addresses/:addressId', async (req, res) => {
     }
 
     await client.query(
-      'DELETE FROM Address WHERE address_id = $1',
+      `
+      DELETE FROM Address
+      WHERE address_id = $1
+        AND NOT EXISTS (
+          SELECT 1 FROM CustomerAddress WHERE address_id = $1
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM CreditCard WHERE address_id = $1
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM Warehouse WHERE address_id = $1
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM StaffMember WHERE address_id = $1
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM Supplier WHERE address_id = $1
+        )
+      `,
       [addressId]
     );
 
     await client.query('COMMIT');
-
     res.json({ message: 'Address deleted successfully' });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -277,14 +329,13 @@ router.post('/:customerId/cards', async (req, res) => {
     );
 
     if (addressCheck.rows.length === 0) {
-      return res.status(400).json({
-        error: 'address_id does not belong to this customer'
-      });
+      return res.status(400).json({ error: 'address_id does not belong to this customer' });
     }
 
     const result = await db.query(
       `
-      INSERT INTO CreditCard (customer_id, card_last_four, card_type, expiration_date, cardholder_name, address_id)
+      INSERT INTO CreditCard
+        (customer_id, card_last_four, card_type, expiration_date, cardholder_name, address_id)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
       `,
@@ -310,10 +361,18 @@ router.patch('/:customerId/cards/:cardId', async (req, res) => {
     const values = [];
     let idx = 1;
 
-    if (card_type !== undefined)      { fields.push(`card_type = $${idx++}`); values.push(card_type); }
-    if (expiration_date !== undefined){ fields.push(`expiration_date = $${idx++}`); values.push(expiration_date); }
-    if (cardholder_name !== undefined){ fields.push(`cardholder_name = $${idx++}`); values.push(cardholder_name); }
-
+    if (card_type !== undefined) {
+      fields.push(`card_type = $${idx++}`);
+      values.push(card_type);
+    }
+    if (expiration_date !== undefined) {
+      fields.push(`expiration_date = $${idx++}`);
+      values.push(expiration_date);
+    }
+    if (cardholder_name !== undefined) {
+      fields.push(`cardholder_name = $${idx++}`);
+      values.push(cardholder_name);
+    }
     if (address_id !== undefined) {
       const addressCheck = await db.query(
         `
