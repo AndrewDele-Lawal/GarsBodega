@@ -357,4 +357,110 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
   }
 });
 
+// ─── STAFF: SUPPLIERS ─────────────────────────────────────────────────────────
+
+// GET /api/staff/suppliers
+router.get('/suppliers', async (req, res) => {
+  try {
+    const result = await db.query(
+      `
+      SELECT supplier_id, supplier_name, address_id
+      FROM Supplier
+      ORDER BY supplier_name ASC
+      `
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to fetch suppliers',
+      details: error.message
+    });
+  }
+});
+
+// POST /api/staff/suppliers
+router.post('/suppliers', async (req, res) => {
+  try {
+    const { supplier_name, address_id } = req.body;
+
+    if (!supplier_name) {
+      return res.status(400).json({ error: 'supplier_name is required' });
+    }
+
+    const result = await db.query(
+      `
+      INSERT INTO Supplier (supplier_name, address_id)
+      VALUES ($1, $2)
+      RETURNING *
+      `,
+      [supplier_name, address_id || null]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to create supplier',
+      details: error.message
+    });
+  }
+});
+
+// GET /api/staff/supplier-products
+router.get('/supplier-products', async (req, res) => {
+  try {
+    const result = await db.query(
+      `
+      SELECT
+        sp.supplier_id,
+        s.supplier_name,
+        sp.product_id,
+        p.product_name,
+        sp.supplier_price
+      FROM SupplierProduct sp
+      JOIN Supplier s ON sp.supplier_id = s.supplier_id
+      JOIN Product p ON sp.product_id = p.product_id
+      ORDER BY s.supplier_name ASC, p.product_name ASC
+      `
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to fetch supplier products',
+      details: error.message
+    });
+  }
+});
+
+// POST /api/staff/supplier-products
+router.post('/supplier-products', async (req, res) => {
+  try {
+    const { supplier_id, product_id, supplier_price } = req.body;
+
+    if (!supplier_id || !product_id || supplier_price == null) {
+      return res.status(400).json({
+        error: 'supplier_id, product_id, and supplier_price are required'
+      });
+    }
+
+    const result = await db.query(
+      `
+      INSERT INTO SupplierProduct (supplier_id, product_id, supplier_price)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (supplier_id, product_id)
+      DO UPDATE SET supplier_price = EXCLUDED.supplier_price
+      RETURNING *
+      `,
+      [supplier_id, product_id, supplier_price]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to save supplier product',
+      details: error.message
+    });
+  }
+});
+
 module.exports = router;

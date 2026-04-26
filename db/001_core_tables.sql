@@ -137,7 +137,7 @@ CREATE TABLE DeliveryPlan (
     estimated_delivery_date DATE
 );
 
--- BONUS: SUPPLIER
+-- BONUS Point Tables: SUPPLIER may or may not be used :/
 CREATE TABLE Supplier (
     supplier_id SERIAL PRIMARY KEY,
     supplier_name VARCHAR(255) NOT NULL,

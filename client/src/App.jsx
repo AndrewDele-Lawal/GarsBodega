@@ -7,6 +7,7 @@ import Account from './pages/Account';
 import StaffProducts from './pages/StaffProducts';
 import StaffStock from './pages/StaffStock';
 import StaffCustomers from './pages/StaffCustomers';
+import StaffSuppliers from './pages/StaffSuppliers';
 
 const CUSTOMER_ID = 1;
 
@@ -42,6 +43,7 @@ export default function App() {
     { key: 'staff-products',  label: 'Manage Products', icon: '📝' },
     { key: 'staff-stock',     label: 'Manage Stock',    icon: '🏭' },
     { key: 'staff-customers', label: 'View Customers',  icon: '👥' },
+    { key: 'staff-suppliers', label: 'Manage Suppliers', icon: '🚚' },
   ];
 
   const renderPage = () => {
@@ -53,6 +55,7 @@ export default function App() {
       case 'staff-products':  return <StaffProducts />;
       case 'staff-stock':     return <StaffStock />;
       case 'staff-customers': return <StaffCustomers />;
+      case 'staff-suppliers': return <StaffSuppliers />;
       default:                return <Products customerId={CUSTOMER_ID} onCartUpdate={fetchCartCount} />;
     }
   };
