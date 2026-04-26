@@ -16,8 +16,10 @@ router.get('/', async (req, res) => {
         p.product_size,
         p.short_description,
         p.current_price,
-        p.total_stock
+        p.total_stock,
+        MIN(pi.image_url) AS image_url
       FROM Product p
+      LEFT JOIN ProductImage pi ON p.product_id = pi.product_id
     `;
 
     const conditions = [];
@@ -25,35 +27,46 @@ router.get('/', async (req, res) => {
 
     if (search) {
       values.push(`%${search}%`);
-      conditions.push(`
-        (
-          p.product_name ILIKE $${values.length}
-          OR p.short_description ILIKE $${values.length}
-        )
-      `);
+      conditions.push(`(
+        p.product_name ILIKE $${values.length}
+        OR p.short_description ILIKE $${values.length}
+      )`);
     }
 
     if (category) {
-      values.push(category);
+      values.push(`%${category}%`);
       conditions.push(`p.category ILIKE $${values.length}`);
     }
 
     if (product_type) {
-      values.push(product_type);
+      values.push(`%${product_type}%`);
       conditions.push(`p.product_type ILIKE $${values.length}`);
     }
 
     if (brand) {
-      values.push(brand);
+      values.push(`%${brand}%`);
       conditions.push(`p.brand ILIKE $${values.length}`);
-    }
-
-    if (in_stock === 'true') {
-      conditions.push(`p.total_stock > 0`);
     }
 
     if (conditions.length > 0) {
       query += ` WHERE ` + conditions.join(' AND ');
+    }
+
+    query += `
+      GROUP BY
+        p.product_id,
+        p.product_name,
+        p.category,
+        p.product_type,
+        p.brand,
+        p.product_size,
+        p.short_description,
+        p.current_price,
+        p.total_stock
+    `;
+
+    if (in_stock === 'true') {
+      query += ` HAVING p.total_stock > 0 `;
     }
 
     query += ` ORDER BY p.product_name ASC`;
@@ -72,7 +85,8 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const query = `
+    const result = await db.query(
+      `
       SELECT
         p.product_id,
         p.product_name,
@@ -82,12 +96,27 @@ router.get('/:id', async (req, res) => {
         p.product_size,
         p.short_description,
         p.current_price,
-        p.total_stock
+        p.total_stock,
+        COALESCE(
+          json_agg(pi.image_url) FILTER (WHERE pi.image_url IS NOT NULL),
+          '[]'
+        ) AS images
       FROM Product p
+      LEFT JOIN ProductImage pi ON p.product_id = pi.product_id
       WHERE p.product_id = $1
-    `;
-
-    const result = await db.query(query, [id]);
+      GROUP BY
+        p.product_id,
+        p.product_name,
+        p.category,
+        p.product_type,
+        p.brand,
+        p.product_size,
+        p.short_description,
+        p.current_price,
+        p.total_stock
+      `,
+      [id]
+    );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Product not found' });
