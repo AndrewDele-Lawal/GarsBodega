@@ -25,35 +25,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/staff/:staffId — get one staff member
-router.get('/:staffId', async (req, res) => {
-  try {
-    const { staffId } = req.params;
-
-    const result = await db.query(
-      `
-      SELECT
-        staff_id,
-        first_name,
-        last_name,
-        job_title,
-        salary
-      FROM StaffMember
-      WHERE staff_id = $1
-      `,
-      [staffId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Staff member not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch staff member', details: error.message });
-  }
-});
-
 // ─── STAFF: CUSTOMER QUERIES ──────────────────────────────────────────────────
 
 // GET /api/staff/customers/all — staff view of all customers
@@ -320,7 +291,6 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
         return res.status(404).json({ error: 'Product not found' });
       }
 
-      // Upsert into Stock table — quantity_on_hand is the correct column name
       await client.query(
         `
         INSERT INTO Stock (warehouse_id, product_id, quantity_on_hand)
@@ -331,7 +301,6 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
         [warehouseId, product_id, quantity]
       );
 
-      // Keep Product.total_stock in sync
       await client.query(
         `
         UPDATE Product
@@ -460,6 +429,37 @@ router.post('/supplier-products', async (req, res) => {
       error: 'Failed to save supplier product',
       details: error.message
     });
+  }
+});
+
+// ─── STAFF: WILDCARD — must stay last ─────────────────────────────────────────
+
+// GET /api/staff/:staffId — get one staff member
+router.get('/:staffId', async (req, res) => {
+  try {
+    const { staffId } = req.params;
+
+    const result = await db.query(
+      `
+      SELECT
+        staff_id,
+        first_name,
+        last_name,
+        job_title,
+        salary
+      FROM StaffMember
+      WHERE staff_id = $1
+      `,
+      [staffId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Staff member not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch staff member', details: error.message });
   }
 });
 
