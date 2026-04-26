@@ -310,7 +310,25 @@ router.post('/supplier-products', async (req, res) => {
   }
 });
 
-// ─── STAFF: WILDCARD — must stay last ─────────────────────────────────────────
+
+// GET /api/staff/warehouses/stock-summary
+router.get('/warehouses/stock-summary', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT w.warehouse_id, w.capacity_size,
+              COALESCE(SUM(s.quantity_on_hand), 0) AS total_on_hand
+       FROM Warehouse w
+       LEFT JOIN Stock s ON w.warehouse_id = s.warehouse_id
+       GROUP BY w.warehouse_id, w.capacity_size
+       ORDER BY w.warehouse_id`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch stock summary', details: error.message });
+  }
+});
+
+// ─── STAFF: WILDCARD — must stay last. Drew Note: Your code will explode if you modify below this line ─────────────────────────────────────────
 
 // GET /api/staff/:staffId
 router.get('/:staffId', async (req, res) => {

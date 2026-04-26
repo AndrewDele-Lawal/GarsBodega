@@ -134,6 +134,7 @@ CREATE TABLE DeliveryPlan (
     delivery_id SERIAL PRIMARY KEY,
     order_id INTEGER NOT NULL UNIQUE REFERENCES Orders(order_id) ON DELETE CASCADE,
     delivery_status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
+    address_id INTEGER REFERENCES Address(address_id),
     estimated_delivery_date DATE
 );
 
