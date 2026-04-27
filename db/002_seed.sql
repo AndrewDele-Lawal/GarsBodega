@@ -21,7 +21,7 @@ VALUES (1, 2, 'both');
 -- CREDIT CARD
 -- ---------------------------------
 INSERT INTO CreditCard (customer_id, address_id, card_last_four, card_type, expiration_date, cardholder_name)
-VALUES (1, 2, '4242', 'Visa', '12/28', 'K Hero');
+VALUES (1, 2, '4242', 'Visa', '12/28', 'Monkey D. Luffy');
 
 -- ---------------------------------
 -- WAREHOUSE
