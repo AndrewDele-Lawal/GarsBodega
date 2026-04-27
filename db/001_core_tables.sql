@@ -45,7 +45,7 @@ CREATE TABLE Address (
     city       VARCHAR(100) NOT NULL,
     state_name VARCHAR(100) NOT NULL,
     zip_code   VARCHAR(20)  NOT NULL,
-    country    VARCHAR(100) NOT NULL
+    country    VARCHAR(100) NOT NULL DEFAULT 'USA'
 );
 
 -- ============================================================
@@ -55,55 +55,48 @@ CREATE TABLE Address (
 CREATE TABLE Customer (
     customer_id     SERIAL PRIMARY KEY,
     first_name      VARCHAR(100) NOT NULL,
-    middle_name     VARCHAR(100),
     last_name       VARCHAR(100) NOT NULL,
-    account_balance NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (account_balance >= 0)
+    email           VARCHAR(255) NOT NULL UNIQUE,
+    phone           VARCHAR(20),
+    account_balance NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (account_balance >= 0),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE CustomerAddress (
     customer_id  INTEGER NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
-    address_id   INTEGER NOT NULL REFERENCES Address(address_id)   ON DELETE CASCADE,
+    address_id   INTEGER NOT NULL REFERENCES Address(address_id) ON DELETE CASCADE,
     address_type VARCHAR(50) CHECK (address_type IN ('delivery', 'payment', 'both')),
     PRIMARY KEY (customer_id, address_id)
 );
 
--- ============================================================
--- CREDIT CARD
--- ============================================================
-
 CREATE TABLE CreditCard (
-    card_id         SERIAL PRIMARY KEY,
-    customer_id     INTEGER      NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
-    address_id      INTEGER      NOT NULL REFERENCES Address(address_id),
-    card_last_four  VARCHAR(4)   NOT NULL CHECK (card_last_four ~ '^[0-9]{4}$'),
-    card_type       VARCHAR(50)  NOT NULL,
-    expiration_date VARCHAR(10)  NOT NULL,
-    cardholder_name VARCHAR(150) NOT NULL
+    card_id          SERIAL PRIMARY KEY,
+    customer_id      INTEGER NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
+    card_last_four   CHAR(4)      NOT NULL,
+    card_type        VARCHAR(50)  NOT NULL,
+    expiration_date  DATE         NOT NULL,
+    cardholder_name  VARCHAR(255) NOT NULL,
+    address_id       INTEGER REFERENCES Address(address_id)
 );
 
 -- ============================================================
--- WAREHOUSE
+-- WAREHOUSE / STAFF
 -- ============================================================
 
 CREATE TABLE Warehouse (
-    warehouse_id  SERIAL PRIMARY KEY,
-    address_id    INTEGER NOT NULL REFERENCES Address(address_id),
-    capacity_size INTEGER CHECK (capacity_size > 0)
+    warehouse_id   SERIAL PRIMARY KEY,
+    warehouse_name VARCHAR(255) NOT NULL,
+    capacity       INTEGER NOT NULL DEFAULT 1000 CHECK (capacity >= 0),
+    address_id     INTEGER REFERENCES Address(address_id)
 );
 
--- ============================================================
--- STAFF MEMBER
--- ============================================================
-
 CREATE TABLE StaffMember (
-    staff_id     SERIAL PRIMARY KEY,
-    first_name   VARCHAR(100)   NOT NULL,
-    middle_name  VARCHAR(100),
-    last_name    VARCHAR(100)   NOT NULL,
-    salary       NUMERIC(10, 2) NOT NULL,
-    job_title    VARCHAR(100)   NOT NULL,
-    address_id   INTEGER REFERENCES Address(address_id),
-    warehouse_id INTEGER REFERENCES Warehouse(warehouse_id)
+    staff_id   SERIAL PRIMARY KEY,
+    first_name VARCHAR(100) NOT NULL,
+    last_name  VARCHAR(100) NOT NULL,
+    email      VARCHAR(255) NOT NULL UNIQUE,
+    role       VARCHAR(100) NOT NULL DEFAULT 'staff',
+    address_id INTEGER REFERENCES Address(address_id)
 );
 
 -- ============================================================
@@ -111,78 +104,44 @@ CREATE TABLE StaffMember (
 -- ============================================================
 
 CREATE TABLE Product (
-    product_id        SERIAL PRIMARY KEY,
-    product_name      VARCHAR(255)   NOT NULL,
-    category          VARCHAR(100)   NOT NULL,
-    product_type      VARCHAR(100)   NOT NULL,
-    brand             VARCHAR(100),
-    product_size      VARCHAR(50),
-    short_description TEXT,
-    current_price     NUMERIC(10, 2) NOT NULL CHECK (current_price >= 0),
-    total_stock       INTEGER        NOT NULL DEFAULT 0 CHECK (total_stock >= 0)
+    product_id    SERIAL PRIMARY KEY,
+    product_name  VARCHAR(255) NOT NULL,
+    description   TEXT,
+    current_price NUMERIC(10, 2) NOT NULL CHECK (current_price >= 0),
+    product_type  VARCHAR(100),
+    total_stock   INTEGER NOT NULL DEFAULT 0 CHECK (total_stock >= 0)
 );
 
 CREATE TABLE ProductImage (
     image_id   SERIAL PRIMARY KEY,
-    product_id INTEGER      NOT NULL REFERENCES Product(product_id) ON DELETE CASCADE,
-    image_url  VARCHAR(500) NOT NULL
+    product_id INTEGER NOT NULL REFERENCES Product(product_id) ON DELETE CASCADE,
+    image_url  TEXT NOT NULL
 );
-
--- ============================================================
--- STOCK
--- ============================================================
 
 CREATE TABLE Stock (
-    warehouse_id     INTEGER NOT NULL REFERENCES Warehouse(warehouse_id) ON DELETE CASCADE,
-    product_id       INTEGER NOT NULL REFERENCES Product(product_id)     ON DELETE CASCADE,
-    quantity_on_hand INTEGER NOT NULL DEFAULT 0 CHECK (quantity_on_hand >= 0),
-    PRIMARY KEY (warehouse_id, product_id)
+    stock_id     SERIAL PRIMARY KEY,
+    product_id   INTEGER NOT NULL REFERENCES Product(product_id) ON DELETE CASCADE,
+    warehouse_id INTEGER NOT NULL REFERENCES Warehouse(warehouse_id) ON DELETE CASCADE,
+    quantity     INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    UNIQUE (product_id, warehouse_id)
 );
-
--- Bonus: enforce warehouse capacity on stock insert/update
-CREATE OR REPLACE FUNCTION check_warehouse_capacity()
-RETURNS TRIGGER AS $$
-DECLARE
-    current_total     INTEGER;
-    warehouse_capacity INTEGER;
-BEGIN
-    SELECT COALESCE(SUM(quantity_on_hand), 0)
-    INTO current_total
-    FROM Stock
-    WHERE warehouse_id = NEW.warehouse_id
-      AND product_id  != NEW.product_id;
-
-    SELECT capacity_size INTO warehouse_capacity
-    FROM Warehouse
-    WHERE warehouse_id = NEW.warehouse_id;
-
-    IF warehouse_capacity IS NOT NULL AND (current_total + NEW.quantity_on_hand) > warehouse_capacity THEN
-        RAISE EXCEPTION 'Warehouse % capacity exceeded. Capacity: %, Current: %, Attempted: %',
-            NEW.warehouse_id, warehouse_capacity, current_total, NEW.quantity_on_hand;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER enforce_warehouse_capacity
-BEFORE INSERT OR UPDATE ON Stock
-FOR EACH ROW EXECUTE FUNCTION check_warehouse_capacity();
 
 -- ============================================================
 -- SHOPPING CART
 -- ============================================================
 
 CREATE TABLE ShoppingCart (
-    cart_id     SERIAL  PRIMARY KEY,
-    customer_id INTEGER NOT NULL UNIQUE REFERENCES Customer(customer_id) ON DELETE CASCADE
+    cart_id     SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL UNIQUE REFERENCES Customer(customer_id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE CartItem (
-    cart_id    INTEGER NOT NULL REFERENCES ShoppingCart(cart_id) ON DELETE CASCADE,
-    product_id INTEGER NOT NULL REFERENCES Product(product_id)   ON DELETE CASCADE,
-    quantity   INTEGER NOT NULL CHECK (quantity > 0),
-    PRIMARY KEY (cart_id, product_id)
+    cart_item_id SERIAL PRIMARY KEY,
+    cart_id      INTEGER NOT NULL REFERENCES ShoppingCart(cart_id) ON DELETE CASCADE,
+    product_id   INTEGER NOT NULL REFERENCES Product(product_id) ON DELETE CASCADE,
+    quantity     INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    UNIQUE (cart_id, product_id)
 );
 
 -- ============================================================
@@ -190,38 +149,35 @@ CREATE TABLE CartItem (
 -- ============================================================
 
 CREATE TABLE Orders (
-    order_id    SERIAL       PRIMARY KEY,
-    customer_id INTEGER      NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
-    card_id     INTEGER      REFERENCES CreditCard(card_id),
+    order_id    SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
+    card_id     INTEGER REFERENCES CreditCard(card_id),
     order_total NUMERIC(12, 2) NOT NULL CHECK (order_total >= 0),
-    status_id   INTEGER      NOT NULL REFERENCES OrderStatus(status_id) DEFAULT 1,
-    order_date  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    status_id   INTEGER NOT NULL REFERENCES OrderStatus(status_id) DEFAULT 1,
+    order_date  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE OrderItem (
-    order_id   INTEGER        NOT NULL REFERENCES Orders(order_id) ON DELETE CASCADE,
-    product_id INTEGER        NOT NULL REFERENCES Product(product_id),
-    quantity   INTEGER        NOT NULL CHECK (quantity > 0),
-    unit_price NUMERIC(10, 2) NOT NULL CHECK (unit_price >= 0),
-    PRIMARY KEY (order_id, product_id)
+    order_item_id SERIAL PRIMARY KEY,
+    order_id      INTEGER NOT NULL REFERENCES Orders(order_id) ON DELETE CASCADE,
+    product_id    INTEGER NOT NULL REFERENCES Product(product_id),
+    quantity      INTEGER NOT NULL CHECK (quantity > 0),
+    unit_price    NUMERIC(10, 2) NOT NULL CHECK (unit_price >= 0)
 );
 
--- ============================================================
--- DELIVERY PLAN
--- ============================================================
-
 CREATE TABLE DeliveryPlan (
-    delivery_id      SERIAL         PRIMARY KEY,
-    order_id         INTEGER        NOT NULL UNIQUE REFERENCES Orders(order_id) ON DELETE CASCADE,
-    delivery_type_id INTEGER        NOT NULL REFERENCES DeliveryType(delivery_type_id) DEFAULT 1,
-    delivery_price   NUMERIC(8, 2)  NOT NULL DEFAULT 0.00 CHECK (delivery_price >= 0),
-    delivery_status  VARCHAR(50)    NOT NULL DEFAULT 'scheduled',
-    ship_date        DATE,
+    delivery_id             SERIAL PRIMARY KEY,
+    order_id                INTEGER NOT NULL UNIQUE REFERENCES Orders(order_id) ON DELETE CASCADE,
+    address_id              INTEGER REFERENCES Address(address_id),
+    delivery_type_id        INTEGER NOT NULL REFERENCES DeliveryType(delivery_type_id) DEFAULT 1,
+    delivery_price          NUMERIC(8, 2) NOT NULL DEFAULT 0.00 CHECK (delivery_price >= 0),
+    delivery_status         VARCHAR(50) NOT NULL DEFAULT 'scheduled',
+    ship_date               DATE,
     estimated_delivery_date DATE
 );
 
 -- ============================================================
--- SUPPLIER (bonus)
+-- SUPPLIER
 -- ============================================================
 
 CREATE TABLE Supplier (
@@ -231,8 +187,8 @@ CREATE TABLE Supplier (
 );
 
 CREATE TABLE SupplierProduct (
-    supplier_id    INTEGER        NOT NULL REFERENCES Supplier(supplier_id) ON DELETE CASCADE,
-    product_id     INTEGER        NOT NULL REFERENCES Product(product_id)   ON DELETE CASCADE,
+    supplier_id    INTEGER NOT NULL REFERENCES Supplier(supplier_id) ON DELETE CASCADE,
+    product_id     INTEGER NOT NULL REFERENCES Product(product_id)   ON DELETE CASCADE,
     supplier_price NUMERIC(10, 2) NOT NULL CHECK (supplier_price >= 0),
     PRIMARY KEY (supplier_id, product_id)
 );
@@ -241,12 +197,12 @@ CREATE TABLE SupplierProduct (
 -- INDICES
 -- ============================================================
 
-CREATE INDEX idx_orders_customer     ON Orders(customer_id);
-CREATE INDEX idx_orders_status       ON Orders(status_id);
-CREATE INDEX idx_orderitem_order     ON OrderItem(order_id);
-CREATE INDEX idx_orderitem_product   ON OrderItem(product_id);
-CREATE INDEX idx_stock_product       ON Stock(product_id);
-CREATE INDEX idx_cartitem_cart       ON CartItem(cart_id);
-CREATE INDEX idx_deliveryplan_order  ON DeliveryPlan(order_id);
-CREATE INDEX idx_product_category    ON Product(category);
-CREATE INDEX idx_product_type        ON Product(product_type);
+CREATE INDEX idx_orders_customer    ON Orders(customer_id);
+CREATE INDEX idx_orders_status      ON Orders(status_id);
+CREATE INDEX idx_orderitem_order    ON OrderItem(order_id);
+CREATE INDEX idx_orderitem_product  ON OrderItem(product_id);
+CREATE INDEX idx_stock_product      ON Stock(product_id);
+CREATE INDEX idx_stock_warehouse    ON Stock(warehouse_id);
+CREATE INDEX idx_cartitem_cart      ON CartItem(cart_id);
+CREATE INDEX idx_deliveryplan_order ON DeliveryPlan(order_id);
+CREATE INDEX idx_product_type       ON Product(product_type);
