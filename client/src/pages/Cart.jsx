@@ -1,5 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 
+const DELIVERY_OPTIONS = [
+  { value: 'standard', label: 'Standard (5 days)', price: 4.99 },
+  { value: 'express',  label: 'Express (3 days)',  price: 9.99 },
+];
+
 export default function Cart({ customerId, onCartUpdate, onNavigate }) {
   const [cart, setCart] = useState({ items: [], cart_total: '0.00' });
   const [loading, setLoading] = useState(true);
@@ -9,20 +14,23 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
   const [addresses, setAddresses] = useState([]);
   const [selectedCard, setSelectedCard] = useState('');
   const [selectedDeliveryAddress, setSelectedDeliveryAddress] = useState('');
+  const [deliveryType, setDeliveryType] = useState('standard');
   const [placing, setPlacing] = useState(false);
 
-  // Only addresses that can be used for delivery
   const deliveryAddresses = useMemo(
     () => addresses.filter((a) => a.address_type === 'delivery' || a.address_type === 'both'),
     [addresses]
   );
 
+  const deliveryPrice = DELIVERY_OPTIONS.find((o) => o.value === deliveryType)?.price ?? 4.99;
+  const itemsTotal   = Number(cart.cart_total);
+  const orderTotal   = itemsTotal + deliveryPrice;
+
   const fetchCart = async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/cart/${customerId}`);
-      const data = await res.json();
-      setCart(data);
+      setCart(await res.json());
     } finally { setLoading(false); }
   };
 
@@ -45,17 +53,13 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
     } catch { setAddresses([]); }
   };
 
-  useEffect(() => {
-    fetchCart();
-    fetchCards();
-    fetchAddresses();
-  }, []);
+  useEffect(() => { fetchCart(); fetchCards(); fetchAddresses(); }, []);
 
   const updateQty = async (productId, qty) => {
     await fetch(`/api/cart/${customerId}/items/${productId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quantity: qty })
+      body: JSON.stringify({ quantity: qty }),
     });
     fetchCart();
     onCartUpdate();
@@ -80,15 +84,16 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           address_id: Number(selectedDeliveryAddress),
-          card_id: selectedCard || null
-        })
+          card_id: selectedCard || null,
+          delivery_type: deliveryType,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Order failed');
       setShowCheckout(false);
       setFeedback({
         type: 'success',
-        msg: `Order #${data.order_id} placed! Estimated delivery: ${new Date(data.estimated_delivery).toLocaleDateString()}`
+        msg: `Order #${data.order_id} placed! ${deliveryType === 'express' ? 'Express' : 'Standard'} delivery — est. ${new Date(data.estimated_delivery).toLocaleDateString()}`,
       });
       fetchCart();
       onCartUpdate();
@@ -108,9 +113,7 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
         <h2>Shopping Cart</h2>
       </div>
 
-      {feedback && (
-        <div className={`feedback feedback-${feedback.type}`}>{feedback.msg}</div>
-      )}
+      {feedback && <div className={`feedback feedback-${feedback.type}`}>{feedback.msg}</div>}
 
       {!cart.items || cart.items.length === 0 ? (
         <div className="empty-state">
@@ -138,7 +141,7 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
           </div>
 
           <div className="cart-summary">
-            <span className="cart-total">Total: ${Number(cart.cart_total).toFixed(2)}</span>
+            <span className="cart-total">Items: ${itemsTotal.toFixed(2)}</span>
             <button className="btn btn-primary" onClick={() => setShowCheckout(true)}>Proceed to Checkout</button>
           </div>
         </>
@@ -148,12 +151,10 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
         <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowCheckout(false); }}>
           <div className="modal">
             <h3>Confirm Order</h3>
-            <p style={{ marginBottom: 'var(--space-4)', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
-              Order total: <strong style={{ color: 'var(--color-text)' }}>${Number(cart.cart_total).toFixed(2)}</strong>
-            </p>
 
+            {/* Delivery address */}
             {deliveryAddresses.length === 0 ? (
-              <p style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)' }}>
+              <p style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
                 You need a delivery or both-type address on your account before placing an order.
               </p>
             ) : (
@@ -169,6 +170,41 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
               </div>
             )}
 
+            {/* Delivery type */}
+            <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+              <label>Delivery Type</label>
+              <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+                {DELIVERY_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                      padding: 'var(--space-3) var(--space-4)',
+                      border: `2px solid ${deliveryType === opt.value ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                      borderRadius: 'var(--radius-md)',
+                      cursor: 'pointer',
+                      background: deliveryType === opt.value ? 'var(--color-primary-highlight)' : 'transparent',
+                      flex: 1,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="deliveryType"
+                      value={opt.value}
+                      checked={deliveryType === opt.value}
+                      onChange={() => setDeliveryType(opt.value)}
+                      style={{ accentColor: 'var(--color-primary)' }}
+                    />
+                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>{opt.label}</span>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginLeft: 'auto' }}>
+                      +${opt.price.toFixed(2)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Payment card */}
             {cards.length > 0 ? (
               <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
                 <label>Pay with</label>
@@ -186,6 +222,28 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
               </p>
             )}
 
+            {/* Order total breakdown */}
+            <div style={{
+              background: 'var(--color-surface-offset)',
+              borderRadius: 'var(--radius-md)',
+              padding: 'var(--space-3) var(--space-4)',
+              marginBottom: 'var(--space-5)',
+              fontSize: 'var(--text-sm)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-1)' }}>
+                <span style={{ color: 'var(--color-text-muted)' }}>Items</span>
+                <span>${itemsTotal.toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                <span style={{ color: 'var(--color-text-muted)' }}>Delivery ({deliveryType})</span>
+                <span>+${deliveryPrice.toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid var(--color-divider)', paddingTop: 'var(--space-2)' }}>
+                <span>Total</span>
+                <span style={{ color: 'var(--color-primary)' }}>${orderTotal.toFixed(2)}</span>
+              </div>
+            </div>
+
             <div className="modal-actions">
               <button className="btn btn-ghost" onClick={() => setShowCheckout(false)}>Cancel</button>
               <button
@@ -193,7 +251,7 @@ export default function Cart({ customerId, onCartUpdate, onNavigate }) {
                 onClick={placeOrder}
                 disabled={placing || deliveryAddresses.length === 0}
               >
-                {placing ? 'Placing...' : 'Place Order'}
+                {placing ? 'Placing...' : `Place Order — $${orderTotal.toFixed(2)}`}
               </button>
             </div>
           </div>
