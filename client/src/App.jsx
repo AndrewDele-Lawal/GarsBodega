@@ -8,6 +8,7 @@ import Account from './pages/Account';
 import StaffProducts from './pages/StaffProducts';
 import StaffStock from './pages/StaffStock';
 import StaffCustomers from './pages/StaffCustomers';
+import StaffOrders from './pages/StaffOrders';
 
 export default function App() {
   const [activeUser, setActiveUser] = useState(null); // null = welcome screen
@@ -55,29 +56,31 @@ export default function App() {
 
   const customerLinks = [
     { key: 'products', label: 'Browse Products', icon: '🔍' },
-    { key: 'cart',     label: 'Cart',            icon: '🛒', badge: cartCount },
-    { key: 'orders',   label: 'My Orders',       icon: '📦' },
-    { key: 'account',  label: 'My Account',      icon: '👤' },
+    { key: 'cart', label: 'Cart', icon: '🛒', badge: cartCount },
+    { key: 'orders', label: 'My Orders', icon: '📦' },
+    { key: 'account', label: 'My Account', icon: '👤' },
   ];
 
   const staffLinks = [
-    { key: 'staff-products',  label: 'Manage Products', icon: '📝' },
-    { key: 'staff-stock',     label: 'Manage Stock',    icon: '🏭' },
-    { key: 'staff-customers', label: 'View Customers',  icon: '👥' },
+    { key: 'staff-products', label: 'Manage Products', icon: '📝' },
+    { key: 'staff-stock', label: 'Manage Stock', icon: '🏭' },
+    { key: 'staff-orders', label: 'Manage Orders', icon: '📋' },
+    { key: 'staff-customers', label: 'View Customers', icon: '👥' },
   ];
 
   const links = role === 'staff' ? staffLinks : customerLinks;
 
   const renderPage = () => {
     switch (page) {
-      case 'products':        return <Products customerId={customerId} onCartUpdate={fetchCartCount} />;
-      case 'cart':            return <Cart customerId={customerId} onCartUpdate={fetchCartCount} onNavigate={nav} />;
-      case 'orders':          return <Orders customerId={customerId} />;
-      case 'account':         return <Account customerId={customerId} />;
-      case 'staff-products':  return <StaffProducts />;
-      case 'staff-stock':     return <StaffStock />;
+      case 'products': return <Products customerId={customerId} onCartUpdate={fetchCartCount} />;
+      case 'cart': return <Cart customerId={customerId} onCartUpdate={fetchCartCount} onNavigate={nav} />;
+      case 'orders': return <Orders customerId={customerId} />;
+      case 'account': return <Account customerId={customerId} />;
+      case 'staff-products': return <StaffProducts />;
+      case 'staff-stock': return <StaffStock />;
+      case 'staff-orders': return <StaffOrders />;
       case 'staff-customers': return <StaffCustomers />;
-      default:                return role === 'staff' ? <StaffProducts /> : <Products customerId={customerId} onCartUpdate={fetchCartCount} />;
+      default: return role === 'staff' ? <StaffProducts /> : <Products customerId={customerId} onCartUpdate={fetchCartCount} />;
     }
   };
 
@@ -85,7 +88,7 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <h1>Gar&apos;s Bodega</h1>
+          <h1>Gar's Bodega</h1>
           <p>
             {role === 'staff'
               ? `Staff — ${activeUser.first_name} ${activeUser.last_name}`
@@ -93,7 +96,6 @@ export default function App() {
             }
           </p>
         </div>
-
         <div className="sidebar-section">
           <div className="sidebar-section-label">{role === 'staff' ? 'Staff' : 'Customer'}</div>
           {links.map(({ key, label, icon, badge }) => (
@@ -108,14 +110,12 @@ export default function App() {
             </button>
           ))}
         </div>
-
         <div className="sidebar-section" style={{ marginTop: 'auto' }}>
           <button className="nav-btn" onClick={handleSignOut}>
             <span>🚪</span> Sign Out
           </button>
         </div>
       </aside>
-
       <main className="main-content">
         {renderPage()}
       </main>
