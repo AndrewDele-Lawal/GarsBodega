@@ -2,10 +2,16 @@ import { useState, useEffect } from 'react';
 
 const statusBadge = (status) => {
   const map = {
-    pending: 'badge-yellow', 'in transit': 'badge-blue',
-    completed: 'badge-green', cancelled: 'badge-red', scheduled: 'badge-blue'
+    pending: 'badge-yellow',
+    issued: 'badge-yellow',
+    'in transit': 'badge-blue',
+    sent: 'badge-blue',
+    scheduled: 'badge-blue',
+    completed: 'badge-green',
+    received: 'badge-green',
+    cancelled: 'badge-red'
   };
-  return map[status] || 'badge-gray';
+  return map[status?.toLowerCase()] || 'badge-gray';
 };
 
 export default function Orders({ customerId }) {
@@ -21,9 +27,11 @@ export default function Orders({ customerId }) {
         const res = await fetch(`/api/orders/${customerId}`);
         const data = await res.json();
         setOrders(data);
-      } finally { setLoading(false); }
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, []);
+  }, [customerId]);
 
   const viewOrder = async (orderId) => {
     setSelected(orderId);
@@ -41,6 +49,7 @@ export default function Orders({ customerId }) {
           ← Back to Orders
         </button>
       </div>
+
       <div className="page-header">
         <h2>Order #{detail.order_id}</h2>
         <p>Placed on {new Date(detail.order_date).toLocaleDateString()}</p>
@@ -90,7 +99,7 @@ export default function Orders({ customerId }) {
         <div className="order-items-list">
           {detail.items?.map((item) => (
             <div key={item.product_id} className="order-item-row">
-              <span>{item.product_name} &times; {item.quantity}</span>
+              <span>{item.product_name} × {item.quantity}</span>
               <span>${Number(item.item_total).toFixed(2)}</span>
             </div>
           ))}
