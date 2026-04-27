@@ -114,11 +114,14 @@ CREATE TABLE CartItem (
 );
 
 -- ORDERS
+-- card_id: which credit card was used to pay (required by project spec)
 CREATE TABLE Orders (
     order_id SERIAL PRIMARY KEY,
     customer_id INTEGER NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
+    card_id INTEGER REFERENCES CreditCard(card_id),
     order_total NUMERIC(12, 2) NOT NULL CHECK (order_total >= 0),
-    order_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    order_status VARCHAR(50) NOT NULL DEFAULT 'pending'
+        CHECK (order_status IN ('pending', 'issued', 'sent', 'received')),
     order_date TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -130,15 +133,24 @@ CREATE TABLE OrderItem (
     PRIMARY KEY (order_id, product_id)
 );
 
+-- DELIVERY PLAN
+-- delivery_type : 'standard' (5 days) or 'express' (3 days)
+-- ship_date     : date the order physically leaves the warehouse (set when staff marks issued)
+-- delivery_price: charged to customer for shipping
+-- estimated_delivery_date: order_date + 3 or 5 days
 CREATE TABLE DeliveryPlan (
     delivery_id SERIAL PRIMARY KEY,
     order_id INTEGER NOT NULL UNIQUE REFERENCES Orders(order_id) ON DELETE CASCADE,
-    delivery_status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
     address_id INTEGER REFERENCES Address(address_id),
-    estimated_delivery_date DATE
+    delivery_type VARCHAR(20) NOT NULL DEFAULT 'standard'
+        CHECK (delivery_type IN ('standard', 'express')),
+    delivery_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00 CHECK (delivery_price >= 0),
+    ship_date DATE,
+    estimated_delivery_date DATE,
+    delivery_status VARCHAR(50) NOT NULL DEFAULT 'scheduled'
 );
 
--- BONUS Point Tables: SUPPLIER may or may not be used :/
+-- SUPPLIER
 CREATE TABLE Supplier (
     supplier_id SERIAL PRIMARY KEY,
     supplier_name VARCHAR(255) NOT NULL,
@@ -152,6 +164,7 @@ CREATE TABLE SupplierProduct (
     PRIMARY KEY (supplier_id, product_id)
 );
 
+-- WAREHOUSE CAPACITY TRIGGER
 CREATE OR REPLACE FUNCTION check_warehouse_capacity()
 RETURNS TRIGGER AS $$
 DECLARE

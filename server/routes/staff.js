@@ -2,6 +2,13 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
+// Valid order status transitions: each status can only move forward
+const STATUS_TRANSITIONS = {
+  pending:  'issued',
+  issued:   'sent',
+  sent:     'received'
+};
+
 // ─── STAFF PROFILE ────────────────────────────────────────────────────────────
 
 // GET /api/staff — get all staff members
@@ -67,7 +74,8 @@ router.get('/customers/:customerId', async (req, res) => {
     }
     const ordersResult = await db.query(
       `SELECT o.order_id, o.order_total, o.order_status, o.order_date,
-              dp.delivery_status, dp.estimated_delivery_date
+              dp.delivery_type, dp.delivery_price, dp.delivery_status,
+              dp.ship_date, dp.estimated_delivery_date
        FROM Orders o
        LEFT JOIN DeliveryPlan dp ON o.order_id = dp.order_id
        WHERE o.customer_id = $1
@@ -77,6 +85,108 @@ router.get('/customers/:customerId', async (req, res) => {
     res.json({ customer: customerResult.rows[0], orders: ordersResult.rows });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch customer details', details: error.message });
+  }
+});
+
+// ─── STAFF: ORDER MANAGEMENT ──────────────────────────────────────────────────
+
+// GET /api/staff/orders — all orders with customer + delivery info
+router.get('/orders', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT o.order_id, o.order_total, o.order_status, o.order_date,
+              c.first_name || ' ' || c.last_name AS customer_name,
+              dp.delivery_type, dp.delivery_price, dp.delivery_status,
+              dp.ship_date, dp.estimated_delivery_date
+       FROM Orders o
+       JOIN Customer c ON o.customer_id = c.customer_id
+       LEFT JOIN DeliveryPlan dp ON o.order_id = dp.order_id
+       ORDER BY o.order_date DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch orders', details: error.message });
+  }
+});
+
+// PATCH /api/staff/orders/:orderId/advance — advance order to the next status
+//
+// pending  → issued   (staff confirms & processes the order; ship_date is recorded)
+// issued   → sent     (order has left the warehouse)
+// sent     → received (customer confirmed delivery)
+//
+// Body: {} — no payload needed, the next status is derived from the current one.
+router.patch('/orders/:orderId/advance', async (req, res) => {
+  const { orderId } = req.params;
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Fetch current order status
+    const orderResult = await client.query(
+      'SELECT order_id, order_status FROM Orders WHERE order_id = $1',
+      [orderId]
+    );
+
+    if (orderResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const currentStatus = orderResult.rows[0].order_status;
+    const nextStatus = STATUS_TRANSITIONS[currentStatus];
+
+    if (!nextStatus) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: `Order is already "${currentStatus}" — no further status transitions are possible.`
+      });
+    }
+
+    // 2. Advance order status
+    await client.query(
+      'UPDATE Orders SET order_status = $1 WHERE order_id = $2',
+      [nextStatus, orderId]
+    );
+
+    // 3. When moving to "issued", record the ship_date on the delivery plan
+    if (nextStatus === 'issued') {
+      await client.query(
+        `UPDATE DeliveryPlan SET ship_date = CURRENT_DATE WHERE order_id = $1`,
+        [orderId]
+      );
+    }
+
+    // 4. When moving to "sent", update delivery_status to "in_transit"
+    if (nextStatus === 'sent') {
+      await client.query(
+        `UPDATE DeliveryPlan SET delivery_status = 'in_transit' WHERE order_id = $1`,
+        [orderId]
+      );
+    }
+
+    // 5. When moving to "received", update delivery_status to "delivered"
+    if (nextStatus === 'received') {
+      await client.query(
+        `UPDATE DeliveryPlan SET delivery_status = 'delivered' WHERE order_id = $1`,
+        [orderId]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: `Order #${orderId} advanced from "${currentStatus}" to "${nextStatus}".`,
+      order_id: Number(orderId),
+      previous_status: currentStatus,
+      new_status: nextStatus
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Failed to advance order status', details: error.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -101,7 +211,7 @@ router.post('/products', async (req, res) => {
   }
 });
 
-// PATCH /api/staff/products/:productId — update a product's details or price
+// PATCH /api/staff/products/:productId — update a product
 router.patch('/products/:productId', async (req, res) => {
   try {
     const { productId } = req.params;
@@ -168,7 +278,6 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
     try {
       await client.query('BEGIN');
 
-      // 1. Verify warehouse exists and get its capacity
       const warehouseResult = await client.query(
         'SELECT warehouse_id, capacity_size FROM Warehouse WHERE warehouse_id = $1',
         [warehouseId]
@@ -179,7 +288,6 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
       }
       const { capacity_size } = warehouseResult.rows[0];
 
-      // 2. Verify product exists
       const productResult = await client.query(
         'SELECT product_id, product_name FROM Product WHERE product_id = $1',
         [product_id]
@@ -190,21 +298,18 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
       }
       const { product_name } = productResult.rows[0];
 
-      // 3. Get current total units across ALL products in this warehouse
       const totalResult = await client.query(
         'SELECT COALESCE(SUM(quantity_on_hand), 0) AS total_in_warehouse FROM Stock WHERE warehouse_id = $1',
         [warehouseId]
       );
       const totalInWarehouse = Number(totalResult.rows[0].total_in_warehouse);
 
-      // 4. Get current quantity_on_hand for THIS product in this warehouse
       const existingResult = await client.query(
         'SELECT quantity_on_hand FROM Stock WHERE warehouse_id = $1 AND product_id = $2',
         [warehouseId, product_id]
       );
       const currentQty = existingResult.rows.length > 0 ? Number(existingResult.rows[0].quantity_on_hand) : 0;
 
-      // 5. Capacity check — would adding quantity push the warehouse over capacity?
       if (capacity_size !== null && totalInWarehouse + quantity > capacity_size) {
         const available = capacity_size - totalInWarehouse;
         await client.query('ROLLBACK');
@@ -213,7 +318,6 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
         });
       }
 
-      // 6. Upsert Stock row
       await client.query(
         `INSERT INTO Stock (warehouse_id, product_id, quantity_on_hand)
          VALUES ($1, $2, $3)
@@ -222,7 +326,6 @@ router.post('/warehouses/:warehouseId/stock', async (req, res) => {
         [warehouseId, product_id, quantity]
       );
 
-      // 7. Update Product.total_stock
       await client.query(
         'UPDATE Product SET total_stock = total_stock + $1 WHERE product_id = $2',
         [quantity, product_id]
@@ -310,7 +413,6 @@ router.post('/supplier-products', async (req, res) => {
   }
 });
 
-
 // GET /api/staff/warehouses/stock-summary
 router.get('/warehouses/stock-summary', async (req, res) => {
   try {
@@ -328,7 +430,7 @@ router.get('/warehouses/stock-summary', async (req, res) => {
   }
 });
 
-// ─── STAFF: WILDCARD — must stay last. Drew Note: Your code will explode if you modify below this line ─────────────────────────────────────────
+// ─── STAFF: WILDCARD — must stay last ─────────────────────────────────────────
 
 // GET /api/staff/:staffId
 router.get('/:staffId', async (req, res) => {
