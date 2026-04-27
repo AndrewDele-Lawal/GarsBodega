@@ -55,8 +55,9 @@ CREATE TABLE Address (
 CREATE TABLE Customer (
     customer_id     SERIAL PRIMARY KEY,
     first_name      VARCHAR(100) NOT NULL,
+    middle_name     VARCHAR(100),
     last_name       VARCHAR(100) NOT NULL,
-    email           VARCHAR(255) NOT NULL UNIQUE,
+    email           VARCHAR(255) UNIQUE,
     phone           VARCHAR(20),
     account_balance NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (account_balance >= 0),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -64,19 +65,19 @@ CREATE TABLE Customer (
 
 CREATE TABLE CustomerAddress (
     customer_id  INTEGER NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
-    address_id   INTEGER NOT NULL REFERENCES Address(address_id) ON DELETE CASCADE,
+    address_id   INTEGER NOT NULL REFERENCES Address(address_id)   ON DELETE CASCADE,
     address_type VARCHAR(50) CHECK (address_type IN ('delivery', 'payment', 'both')),
     PRIMARY KEY (customer_id, address_id)
 );
 
 CREATE TABLE CreditCard (
-    card_id          SERIAL PRIMARY KEY,
-    customer_id      INTEGER NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
-    card_last_four   CHAR(4)      NOT NULL,
-    card_type        VARCHAR(50)  NOT NULL,
-    expiration_date  DATE         NOT NULL,
-    cardholder_name  VARCHAR(255) NOT NULL,
-    address_id       INTEGER REFERENCES Address(address_id)
+    card_id         SERIAL PRIMARY KEY,
+    customer_id     INTEGER NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
+    card_last_four  CHAR(4)       NOT NULL,
+    card_type       VARCHAR(50)   NOT NULL,
+    expiration_date DATE          NOT NULL,
+    cardholder_name VARCHAR(255)  NOT NULL,
+    address_id      INTEGER REFERENCES Address(address_id)
 );
 
 -- ============================================================
@@ -84,19 +85,23 @@ CREATE TABLE CreditCard (
 -- ============================================================
 
 CREATE TABLE Warehouse (
-    warehouse_id   SERIAL PRIMARY KEY,
-    warehouse_name VARCHAR(255) NOT NULL,
-    capacity       INTEGER NOT NULL DEFAULT 1000 CHECK (capacity >= 0),
-    address_id     INTEGER REFERENCES Address(address_id)
+    warehouse_id    SERIAL PRIMARY KEY,
+    warehouse_name  VARCHAR(255) NOT NULL DEFAULT 'Main Warehouse',
+    capacity_size   INTEGER NOT NULL DEFAULT 1000 CHECK (capacity_size >= 0),
+    address_id      INTEGER REFERENCES Address(address_id)
 );
 
 CREATE TABLE StaffMember (
-    staff_id   SERIAL PRIMARY KEY,
-    first_name VARCHAR(100) NOT NULL,
-    last_name  VARCHAR(100) NOT NULL,
-    email      VARCHAR(255) NOT NULL UNIQUE,
-    role       VARCHAR(100) NOT NULL DEFAULT 'staff',
-    address_id INTEGER REFERENCES Address(address_id)
+    staff_id     SERIAL PRIMARY KEY,
+    first_name   VARCHAR(100)   NOT NULL,
+    middle_name  VARCHAR(100),
+    last_name    VARCHAR(100)   NOT NULL,
+    email        VARCHAR(255)   UNIQUE,
+    salary       NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (salary >= 0),
+    job_title    VARCHAR(100)   NOT NULL,
+    role         VARCHAR(50)    NOT NULL DEFAULT 'staff',
+    address_id   INTEGER REFERENCES Address(address_id),
+    warehouse_id INTEGER REFERENCES Warehouse(warehouse_id)
 );
 
 -- ============================================================
@@ -104,12 +109,15 @@ CREATE TABLE StaffMember (
 -- ============================================================
 
 CREATE TABLE Product (
-    product_id    SERIAL PRIMARY KEY,
-    product_name  VARCHAR(255) NOT NULL,
-    description   TEXT,
-    current_price NUMERIC(10, 2) NOT NULL CHECK (current_price >= 0),
-    product_type  VARCHAR(100),
-    total_stock   INTEGER NOT NULL DEFAULT 0 CHECK (total_stock >= 0)
+    product_id        SERIAL PRIMARY KEY,
+    product_name      VARCHAR(255)   NOT NULL,
+    category          VARCHAR(100),
+    product_type      VARCHAR(100),
+    brand             VARCHAR(100),
+    product_size      VARCHAR(100),
+    short_description TEXT,
+    current_price     NUMERIC(10, 2) NOT NULL CHECK (current_price >= 0),
+    total_stock       INTEGER        NOT NULL DEFAULT 0 CHECK (total_stock >= 0)
 );
 
 CREATE TABLE ProductImage (
@@ -119,10 +127,10 @@ CREATE TABLE ProductImage (
 );
 
 CREATE TABLE Stock (
-    stock_id     SERIAL PRIMARY KEY,
-    product_id   INTEGER NOT NULL REFERENCES Product(product_id) ON DELETE CASCADE,
-    warehouse_id INTEGER NOT NULL REFERENCES Warehouse(warehouse_id) ON DELETE CASCADE,
-    quantity     INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    stock_id         SERIAL PRIMARY KEY,
+    product_id       INTEGER NOT NULL REFERENCES Product(product_id)   ON DELETE CASCADE,
+    warehouse_id     INTEGER NOT NULL REFERENCES Warehouse(warehouse_id) ON DELETE CASCADE,
+    quantity_on_hand INTEGER NOT NULL DEFAULT 0 CHECK (quantity_on_hand >= 0),
     UNIQUE (product_id, warehouse_id)
 );
 
@@ -138,8 +146,8 @@ CREATE TABLE ShoppingCart (
 
 CREATE TABLE CartItem (
     cart_item_id SERIAL PRIMARY KEY,
-    cart_id      INTEGER NOT NULL REFERENCES ShoppingCart(cart_id) ON DELETE CASCADE,
-    product_id   INTEGER NOT NULL REFERENCES Product(product_id) ON DELETE CASCADE,
+    cart_id      INTEGER NOT NULL REFERENCES ShoppingCart(cart_id)  ON DELETE CASCADE,
+    product_id   INTEGER NOT NULL REFERENCES Product(product_id)    ON DELETE CASCADE,
     quantity     INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
     UNIQUE (cart_id, product_id)
 );
@@ -150,34 +158,34 @@ CREATE TABLE CartItem (
 
 CREATE TABLE Orders (
     order_id    SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
-    card_id     INTEGER REFERENCES CreditCard(card_id),
+    customer_id INTEGER        NOT NULL REFERENCES Customer(customer_id) ON DELETE CASCADE,
+    card_id     INTEGER        REFERENCES CreditCard(card_id),
     order_total NUMERIC(12, 2) NOT NULL CHECK (order_total >= 0),
-    status_id   INTEGER NOT NULL REFERENCES OrderStatus(status_id) DEFAULT 1,
-    order_date  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    status_id   INTEGER        NOT NULL REFERENCES OrderStatus(status_id) DEFAULT 1,
+    order_date  TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE OrderItem (
     order_item_id SERIAL PRIMARY KEY,
-    order_id      INTEGER NOT NULL REFERENCES Orders(order_id) ON DELETE CASCADE,
-    product_id    INTEGER NOT NULL REFERENCES Product(product_id),
-    quantity      INTEGER NOT NULL CHECK (quantity > 0),
+    order_id      INTEGER        NOT NULL REFERENCES Orders(order_id) ON DELETE CASCADE,
+    product_id    INTEGER        NOT NULL REFERENCES Product(product_id),
+    quantity      INTEGER        NOT NULL CHECK (quantity > 0),
     unit_price    NUMERIC(10, 2) NOT NULL CHECK (unit_price >= 0)
 );
 
 CREATE TABLE DeliveryPlan (
     delivery_id             SERIAL PRIMARY KEY,
-    order_id                INTEGER NOT NULL UNIQUE REFERENCES Orders(order_id) ON DELETE CASCADE,
-    address_id              INTEGER REFERENCES Address(address_id),
-    delivery_type_id        INTEGER NOT NULL REFERENCES DeliveryType(delivery_type_id) DEFAULT 1,
-    delivery_price          NUMERIC(8, 2) NOT NULL DEFAULT 0.00 CHECK (delivery_price >= 0),
-    delivery_status         VARCHAR(50) NOT NULL DEFAULT 'scheduled',
+    order_id                INTEGER        NOT NULL UNIQUE REFERENCES Orders(order_id) ON DELETE CASCADE,
+    address_id              INTEGER        REFERENCES Address(address_id),
+    delivery_type_id        INTEGER        NOT NULL REFERENCES DeliveryType(delivery_type_id) DEFAULT 1,
+    delivery_price          NUMERIC(8, 2)  NOT NULL DEFAULT 0.00 CHECK (delivery_price >= 0),
+    delivery_status         VARCHAR(50)    NOT NULL DEFAULT 'scheduled',
     ship_date               DATE,
     estimated_delivery_date DATE
 );
 
 -- ============================================================
--- SUPPLIER
+-- SUPPLIER (bonus)
 -- ============================================================
 
 CREATE TABLE Supplier (
@@ -187,8 +195,8 @@ CREATE TABLE Supplier (
 );
 
 CREATE TABLE SupplierProduct (
-    supplier_id    INTEGER NOT NULL REFERENCES Supplier(supplier_id) ON DELETE CASCADE,
-    product_id     INTEGER NOT NULL REFERENCES Product(product_id)   ON DELETE CASCADE,
+    supplier_id    INTEGER        NOT NULL REFERENCES Supplier(supplier_id) ON DELETE CASCADE,
+    product_id     INTEGER        NOT NULL REFERENCES Product(product_id)   ON DELETE CASCADE,
     supplier_price NUMERIC(10, 2) NOT NULL CHECK (supplier_price >= 0),
     PRIMARY KEY (supplier_id, product_id)
 );
