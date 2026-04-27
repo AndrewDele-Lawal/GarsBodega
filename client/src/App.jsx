@@ -9,6 +9,7 @@ import StaffProducts from './pages/StaffProducts';
 import StaffStock from './pages/StaffStock';
 import StaffCustomers from './pages/StaffCustomers';
 import StaffOrders from './pages/StaffOrders';
+import StaffSuppliers from './pages/StaffSuppliers';
 
 export default function App() {
   const [activeUser, setActiveUser] = useState(null); // null = welcome screen
@@ -66,6 +67,7 @@ export default function App() {
     { key: 'staff-stock', label: 'Manage Stock', icon: '🏭' },
     { key: 'staff-orders', label: 'Manage Orders', icon: '📋' },
     { key: 'staff-customers', label: 'View Customers', icon: '👥' },
+    { key: 'staff-suppliers', label: 'Manage Suppliers', icon: '📦' },
   ];
 
   const links = role === 'staff' ? staffLinks : customerLinks;
@@ -80,6 +82,7 @@ export default function App() {
       case 'staff-stock': return <StaffStock />;
       case 'staff-orders': return <StaffOrders />;
       case 'staff-customers': return <StaffCustomers />;
+      case 'staff-suppliers': return <StaffSuppliers />;
       default: return role === 'staff' ? <StaffProducts /> : <Products customerId={customerId} onCartUpdate={fetchCartCount} />;
     }
   };
