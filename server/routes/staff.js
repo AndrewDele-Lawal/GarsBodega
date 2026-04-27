@@ -6,8 +6,8 @@ const db = require('../db');
 router.get('/', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT staff_id, first_name, last_name, role, email, address_id 
-       FROM StaffMember 
+      `SELECT staff_id, first_name, middle_name, last_name, job_title, role, salary, email, address_id, warehouse_id
+       FROM StaffMember
        ORDER BY last_name ASC`
     );
     res.json(result.rows);
@@ -20,8 +20,8 @@ router.get('/', async (req, res) => {
 router.get('/customers/all', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT customer_id, first_name, last_name, email, phone, account_balance 
-       FROM Customer 
+      `SELECT customer_id, first_name, middle_name, last_name, email, phone, account_balance
+       FROM Customer
        ORDER BY last_name ASC`
     );
     res.json(result.rows);
@@ -35,8 +35,8 @@ router.get('/customers/:customerId', async (req, res) => {
   try {
     const { customerId } = req.params;
     const customerResult = await db.query(
-      `SELECT customer_id, first_name, last_name, email, phone, account_balance 
-       FROM Customer 
+      `SELECT customer_id, first_name, middle_name, last_name, email, phone, account_balance
+       FROM Customer
        WHERE customer_id = $1`,
       [customerId]
     );
@@ -46,12 +46,12 @@ router.get('/customers/:customerId', async (req, res) => {
     }
 
     const ordersResult = await db.query(
-      `SELECT o.order_id, o.order_total, os.status_name AS order_status, o.order_date, 
-              dp.delivery_status, dp.estimated_delivery_date 
-       FROM Orders o 
+      `SELECT o.order_id, o.order_total, os.status_name AS order_status, o.order_date,
+              dp.delivery_status, dp.estimated_delivery_date
+       FROM Orders o
        JOIN OrderStatus os ON o.status_id = os.status_id
-       LEFT JOIN DeliveryPlan dp ON o.order_id = dp.order_id 
-       WHERE o.customer_id = $1 
+       LEFT JOIN DeliveryPlan dp ON o.order_id = dp.order_id
+       WHERE o.customer_id = $1
        ORDER BY o.order_date DESC`,
       [customerId]
     );
@@ -65,18 +65,17 @@ router.get('/customers/:customerId', async (req, res) => {
 // POST /api/staff/customers — create a new customer
 router.post('/customers', async (req, res) => {
   try {
-    const { first_name, last_name, email, phone, phone_number, account_balance = 0 } = req.body;
-    const finalPhone = phone || phone_number || null;
+    const { first_name, middle_name, last_name, email, phone, account_balance = 0 } = req.body;
 
-    if (!first_name || !last_name || !email) {
-      return res.status(400).json({ error: 'first_name, last_name, and email are required' });
+    if (!first_name || !last_name) {
+      return res.status(400).json({ error: 'first_name and last_name are required' });
     }
 
     const result = await db.query(
-      `INSERT INTO Customer (first_name, last_name, email, phone, account_balance) 
-       VALUES ($1, $2, $3, $4, $5) 
+      `INSERT INTO Customer (first_name, middle_name, last_name, email, phone, account_balance)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [first_name, last_name, email, finalPhone, account_balance]
+      [first_name, middle_name || null, last_name, email || null, phone || null, account_balance]
     );
 
     res.status(201).json(result.rows[0]);
@@ -140,17 +139,153 @@ router.patch('/orders/:orderId/status', async (req, res) => {
 router.get('/warehouses', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT w.warehouse_id, w.warehouse_name, w.capacity,
-              COALESCE(SUM(s.quantity), 0) AS current_stock
+      `SELECT w.warehouse_id, w.warehouse_name, w.capacity_size,
+              COALESCE(SUM(s.quantity_on_hand), 0) AS current_stock
        FROM Warehouse w
-       LEFT JOIN Address a ON w.address_id = a.address_id
        LEFT JOIN Stock s ON w.warehouse_id = s.warehouse_id
-       GROUP BY w.warehouse_id, w.warehouse_name, w.capacity
+       GROUP BY w.warehouse_id, w.warehouse_name, w.capacity_size
        ORDER BY w.warehouse_id ASC`
     );
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch warehouses', details: error.message });
+  }
+});
+
+// GET /api/staff/warehouses/stock-summary — capacity summary for all warehouses
+router.get('/warehouses/stock-summary', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT w.warehouse_id, w.capacity_size,
+              COALESCE(SUM(s.quantity_on_hand), 0) AS total_on_hand
+       FROM Warehouse w
+       LEFT JOIN Stock s ON w.warehouse_id = s.warehouse_id
+       GROUP BY w.warehouse_id, w.capacity_size
+       ORDER BY w.warehouse_id`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch stock summary', details: error.message });
+  }
+});
+
+// GET /api/staff/stock — get all stock entries with product + warehouse info
+router.get('/stock', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT s.stock_id, s.quantity_on_hand, s.warehouse_id, s.product_id,
+              p.product_name, p.category, p.total_stock,
+              w.warehouse_name, w.capacity_size
+       FROM Stock s
+       JOIN Product p ON s.product_id = p.product_id
+       JOIN Warehouse w ON s.warehouse_id = w.warehouse_id
+       ORDER BY w.warehouse_id, p.product_name ASC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch stock', details: error.message });
+  }
+});
+
+// POST /api/staff/stock/restock — add stock to a warehouse
+router.post('/stock/restock', async (req, res) => {
+  const { product_id, warehouse_id, quantity } = req.body;
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Get warehouse capacity
+    const warehouseResult = await client.query(
+      'SELECT capacity_size FROM Warehouse WHERE warehouse_id = $1',
+      [warehouse_id]
+    );
+
+    if (warehouseResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Warehouse not found' });
+    }
+
+    const capacity = warehouseResult.rows[0].capacity_size;
+
+    // 2. Get total currently in warehouse
+    const usageResult = await client.query(
+      'SELECT COALESCE(SUM(quantity_on_hand), 0) AS total FROM Stock WHERE warehouse_id = $1',
+      [warehouse_id]
+    );
+
+    const currentTotal = parseInt(usageResult.rows[0].total);
+
+    if (currentTotal + quantity > capacity) {
+      await client.query('ROLLBACK');
+      const available = capacity - currentTotal;
+      return res.status(400).json({
+        error: `Warehouse capacity exceeded. Capacity: ${capacity}, currently holding: ${currentTotal}, available space: ${available}. You tried to add: ${quantity}.`
+      });
+    }
+
+    // 3. Upsert stock row
+    const stockResult = await client.query(
+      `INSERT INTO Stock (product_id, warehouse_id, quantity_on_hand)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (product_id, warehouse_id)
+       DO UPDATE SET quantity_on_hand = Stock.quantity_on_hand + EXCLUDED.quantity_on_hand
+       RETURNING quantity_on_hand`,
+      [product_id, warehouse_id, quantity]
+    );
+
+    const newQty = stockResult.rows[0].quantity_on_hand;
+
+    // 4. Update Product.total_stock
+    await client.query(
+      'UPDATE Product SET total_stock = total_stock + $1 WHERE product_id = $2',
+      [quantity, product_id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: `Restocked successfully. New quantity on hand: ${newQty}. Warehouse now at ${currentTotal + quantity}/${capacity}.`
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Restock failed', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/staff/suppliers — get all suppliers
+router.get('/suppliers', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT s.supplier_id, s.supplier_name,
+              a.street, a.city, a.state_name, a.zip_code, a.country
+       FROM Supplier s
+       LEFT JOIN Address a ON s.address_id = a.address_id
+       ORDER BY s.supplier_name ASC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch suppliers', details: error.message });
+  }
+});
+
+// GET /api/staff/suppliers/:supplierId/products — products a supplier carries
+router.get('/suppliers/:supplierId/products', async (req, res) => {
+  try {
+    const { supplierId } = req.params;
+    const result = await db.query(
+      `SELECT sp.product_id, p.product_name, p.category, p.current_price, sp.supplier_price
+       FROM SupplierProduct sp
+       JOIN Product p ON sp.product_id = p.product_id
+       WHERE sp.supplier_id = $1
+       ORDER BY p.product_name ASC`,
+      [supplierId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch supplier products', details: error.message });
   }
 });
 

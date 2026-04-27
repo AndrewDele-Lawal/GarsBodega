@@ -3,9 +3,11 @@
 -- ---------------------------------
 INSERT INTO Address (street, city, state_name, zip_code, country)
 VALUES
-('101 Plaza Way', 'Lakewood', 'Turbo State', '10001', 'USA'),
-('202 Hero Lane', 'Lakewood', 'Turbo State', '10002', 'USA'),
-('303 Supply Ave', 'Lakewood', 'Turbo State', '10003', 'USA');
+('101 Plaza Way',    'Lakewood', 'Turbo State', '10001', 'USA'),
+('202 Hero Lane',    'Lakewood', 'Turbo State', '10002', 'USA'),
+('303 Supply Ave',   'Lakewood', 'Turbo State', '10003', 'USA'),
+('44 Potion Blvd',   'Lakewood', 'Turbo State', '10004', 'USA'),
+('99 Harvest Road',  'Lakewood', 'Turbo State', '10005', 'USA');
 
 -- ---------------------------------
 -- CUSTOMER
@@ -13,7 +15,7 @@ VALUES
 INSERT INTO Customer (first_name, middle_name, last_name, account_balance)
 VALUES ('Luffy', 'D', 'Monkey', 100.00);
 
--- Link customer to address 2
+-- Link customer to address 2 (both delivery and payment)
 INSERT INTO CustomerAddress (customer_id, address_id, address_type)
 VALUES (1, 2, 'both');
 
@@ -103,3 +105,37 @@ VALUES
 -- ---------------------------------
 INSERT INTO ShoppingCart (customer_id)
 VALUES (1);
+
+-- ---------------------------------
+-- SUPPLIERS (bonus)
+-- ---------------------------------
+INSERT INTO Supplier (supplier_name, address_id)
+VALUES
+  ('Plaza Farms Co.',       5),
+  ('Enid Essentials LLC',   4),
+  ('Spicy Heroics Supply',  4),
+  ('Bodega Select Imports', 3);
+
+-- ---------------------------------
+-- SUPPLIER PRODUCTS
+-- Supplier 1 = Plaza Farms     (fruits)
+-- Supplier 2 = Enid Essentials (stat/cure potions)
+-- Supplier 3 = Spicy Heroics   (turbo pepper + energy drink)
+-- Supplier 4 = Bodega Select   (mystery potion, protein bar)
+-- ---------------------------------
+INSERT INTO SupplierProduct (supplier_id, product_id, supplier_price)
+VALUES
+  -- Plaza Farms: all power-up fruits
+  (1, 1,  2.50),   -- Red Power Fruit
+  (1, 2,  2.75),   -- Blue Chill Berry
+  (1, 3, 10.00),   -- Golden Might Melon
+  (1, 5,  7.50),   -- Shadow Grape
+  -- Enid Essentials: stat + cure potions
+  (2, 11, 3.00),   -- Stamina Tonic
+  (2, 12, 2.75),   -- Antidote Vial
+  -- Spicy Heroics: turbo pepper + energy drink
+  (3, 4,  4.00),   -- Turbo Pepper
+  (3, 14, 1.50),   -- Plaza Energy Drink
+  -- Bodega Select: mystery potion + protein bar
+  (4, 13, 1.00),   -- Mystery Potion
+  (4, 15, 1.25);   -- Hero Protein Bar
